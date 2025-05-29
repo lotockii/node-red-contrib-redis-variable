@@ -1,5 +1,5 @@
 {
-  "name": "red-contrib-redis-variable",
+  "name": "node-red-contrib-redis-variable",
   "version": "1.0.0",
   "description": "A comprehensive Node-RED node for Redis operations with universal payload-based configuration, automatic JSON handling, and SSL/TLS support",
   "keywords": [
