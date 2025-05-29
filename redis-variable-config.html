@@ -1,0 +1,731 @@
+<script type="text/javascript">
+  RED.nodes.registerType("redis-variable-config", {
+    category: "config",
+    defaults: {
+      name: { value: "" },
+      cluster: { value: false },
+      host: { value: "localhost" },
+      hostType: { value: "str" },
+      hostContext: { value: "" },
+      port: { value: 6379 },
+      portType: { value: "str" },
+      portContext: { value: "" },
+      database: { value: 0 },
+      databaseType: { value: "str" },
+      databaseContext: { value: "" },
+      passwordType: { value: "str" },
+      passwordContext: { value: "" },
+      usernameType: { value: "str" },
+      usernameContext: { value: "" },
+      // SSL Configuration
+      enableTLS: { value: false },
+      tlsRejectUnauthorized: { value: true },
+      tlsCertType: { value: "str" },
+      tlsCertContext: { value: "" },
+      tlsKeyType: { value: "str" },
+      tlsKeyContext: { value: "" },
+      tlsCaType: { value: "str" },
+      tlsCaContext: { value: "" },
+      options: { value: "{}" },
+      optionsType: { value: "json" },
+      optionsContext: { value: "" }
+    },
+    credentials: {
+      password: { type: "password" },
+      username: { type: "text" },
+      tlsCert: { type: "password" },
+      tlsKey: { type: "password" },
+      tlsCa: { type: "password" }
+    },
+    label: function () {
+      return this.name || "Redis Config (" + (this.host || "localhost") + ":" + (this.port || 6379) + ")";
+    },
+    oneditprepare: function() {
+      var stdTypes = ['str', 'flow', 'global', 'env'];
+      var numTypes = ['str', 'flow', 'global', 'env', 'num'];
+      var jsonTypes = ['str', 'flow', 'global', 'env', 'json'];
+      
+      // Initialize typedInput for Host
+      $("#node-config-input-host-typed").typedInput({
+        default: 'str',
+        types: stdTypes,
+        typeField: "#node-config-input-hostType"
+      });
+      $("#node-config-input-host-typed").typedInput('type', this.hostType || 'str');
+      
+      if (this.hostType === 'str') {
+        $("#node-config-input-host-typed").typedInput('value', this.host || 'localhost');
+      } else {
+        $("#node-config-input-host-typed").typedInput('value', this.hostContext || '');
+      }
+
+      // Initialize typedInput for Port
+      $("#node-config-input-port-typed").typedInput({
+        default: 'str',
+        types: numTypes,
+        typeField: "#node-config-input-portType"
+      });
+      $("#node-config-input-port-typed").typedInput('type', this.portType || 'str');
+      
+      if (this.portType === 'str') {
+        $("#node-config-input-port-typed").typedInput('value', this.port || 6379);
+      } else {
+        $("#node-config-input-port-typed").typedInput('value', this.portContext || '');
+      }
+
+      // Initialize typedInput for Database
+      $("#node-config-input-database-typed").typedInput({
+        default: 'str',
+        types: numTypes,
+        typeField: "#node-config-input-databaseType"
+      });
+      $("#node-config-input-database-typed").typedInput('type', this.databaseType || 'str');
+      
+      if (this.databaseType === 'str') {
+        $("#node-config-input-database-typed").typedInput('value', this.database || 0);
+      } else {
+        $("#node-config-input-database-typed").typedInput('value', this.databaseContext || '');
+      }
+
+      // Initialize typedInput for Options
+      $("#node-config-input-options-typed").typedInput({
+        default: 'json',
+        types: jsonTypes,
+        typeField: "#node-config-input-optionsType"
+      });
+      $("#node-config-input-options-typed").typedInput('type', this.optionsType || 'json');
+      
+      if (this.optionsType === 'json') {
+        $("#node-config-input-options-typed").typedInput('value', this.options || '{}');
+      } else {
+        $("#node-config-input-options-typed").typedInput('value', this.optionsContext || '');
+      }
+
+      // Password type selection
+      if (this.passwordType && this.passwordType !== 'str') {
+        $("#node-config-input-password-type").val(this.passwordType);
+        $("#node-config-input-password-context").val(this.passwordContext || '');
+      } else {
+        $("#node-config-input-password-type").val('str');
+      }
+
+      // Username type selection
+      if (this.usernameType && this.usernameType !== 'str') {
+        $("#node-config-input-username-type").val(this.usernameType);
+        $("#node-config-input-username-context").val(this.usernameContext || '');
+      } else {
+        $("#node-config-input-username-type").val('str');
+      }
+
+      // Password field visibility logic
+      var updatePasswordFieldVisibility = function() {
+        var passwordType = $("#node-config-input-password-type").val();
+        
+        if (passwordType === 'str') {
+          $("#password-str-row").show();
+          $("#password-context-row").hide();
+        } else {
+          $("#password-str-row").hide();
+          $("#password-context-row").show();
+        }
+      };
+
+      // Username field visibility logic
+      var updateUsernameFieldVisibility = function() {
+        var usernameType = $("#node-config-input-username-type").val();
+        
+        if (usernameType === 'str') {
+          $("#username-str-row").show();
+          $("#username-context-row").hide();
+        } else {
+          $("#username-str-row").hide();
+          $("#username-context-row").show();
+        }
+      };
+
+      $("#node-config-input-password-type").on("change", updatePasswordFieldVisibility);
+      $("#node-config-input-username-type").on("change", updateUsernameFieldVisibility);
+      
+      // Call immediately to set initial state
+      updatePasswordFieldVisibility();
+      updateUsernameFieldVisibility();
+
+      // Load existing credentials if available
+      if (this.credentials && this.credentials.password) {
+        $("#node-config-input-password-visible").val(this.credentials.password);
+        $("#node-config-input-password").val(this.credentials.password);
+      } else if (this.credentials && this.credentials.has_password) {
+        $("#node-config-input-password-visible").attr('placeholder', '••••••••••••••••••••••••••••••••••••••••');
+        $("#node-config-input-password-visible").val('');
+      }
+
+      if (this.credentials && this.credentials.username) {
+        $("#node-config-input-username-visible").val(this.credentials.username);
+        $("#node-config-input-username").val(this.credentials.username);
+      }
+
+      // Sync visible fields with hidden credentials fields
+      $("#node-config-input-password-visible").on("input", function() {
+        $("#node-config-input-password").val($(this).val());
+      });
+
+      $("#node-config-input-username-visible").on("input", function() {
+        $("#node-config-input-username").val($(this).val());
+      });
+
+      // Set cluster checkbox
+      $("#node-config-input-cluster").prop('checked', this.cluster === true);
+      
+      // SSL Configuration
+      $("#node-config-input-enableTLS").prop('checked', this.enableTLS === true);
+      $("#node-config-input-tlsRejectUnauthorized").prop('checked', this.tlsRejectUnauthorized !== false);
+      
+      // TLS Certificate type selection
+      if (this.tlsCertType && this.tlsCertType !== 'str') {
+        $("#node-config-input-tlsCert-type").val(this.tlsCertType);
+        $("#node-config-input-tlsCert-context").val(this.tlsCertContext || '');
+      } else {
+        $("#node-config-input-tlsCert-type").val('str');
+      }
+      
+      // TLS Key type selection
+      if (this.tlsKeyType && this.tlsKeyType !== 'str') {
+        $("#node-config-input-tlsKey-type").val(this.tlsKeyType);
+        $("#node-config-input-tlsKey-context").val(this.tlsKeyContext || '');
+      } else {
+        $("#node-config-input-tlsKey-type").val('str');
+      }
+      
+      // TLS CA type selection
+      if (this.tlsCaType && this.tlsCaType !== 'str') {
+        $("#node-config-input-tlsCa-type").val(this.tlsCaType);
+        $("#node-config-input-tlsCa-context").val(this.tlsCaContext || '');
+      } else {
+        $("#node-config-input-tlsCa-type").val('str');
+      }
+
+      // SSL field visibility logic
+      var updateSSLFieldsVisibility = function() {
+        var enableTLS = $("#node-config-input-enableTLS").is(':checked');
+        
+        if (enableTLS) {
+          $("#ssl-config-section").show();
+        } else {
+          $("#ssl-config-section").hide();
+        }
+      };
+
+      var updateTLSCertFieldVisibility = function() {
+        var certType = $("#node-config-input-tlsCert-type").val();
+        
+        if (certType === 'str') {
+          $("#tlsCert-str-row").show();
+          $("#tlsCert-context-row").hide();
+        } else {
+          $("#tlsCert-str-row").hide();
+          $("#tlsCert-context-row").show();
+        }
+      };
+
+      var updateTLSKeyFieldVisibility = function() {
+        var keyType = $("#node-config-input-tlsKey-type").val();
+        
+        if (keyType === 'str') {
+          $("#tlsKey-str-row").show();
+          $("#tlsKey-context-row").hide();
+        } else {
+          $("#tlsKey-str-row").hide();
+          $("#tlsKey-context-row").show();
+        }
+      };
+
+      var updateTLSCaFieldVisibility = function() {
+        var caType = $("#node-config-input-tlsCa-type").val();
+        
+        if (caType === 'str') {
+          $("#tlsCa-str-row").show();
+          $("#tlsCa-context-row").hide();
+        } else {
+          $("#tlsCa-str-row").hide();
+          $("#tlsCa-context-row").show();
+        }
+      };
+
+      $("#node-config-input-enableTLS").on("change", updateSSLFieldsVisibility);
+      $("#node-config-input-tlsCert-type").on("change", updateTLSCertFieldVisibility);
+      $("#node-config-input-tlsKey-type").on("change", updateTLSKeyFieldVisibility);
+      $("#node-config-input-tlsCa-type").on("change", updateTLSCaFieldVisibility);
+      
+      // Call immediately to set initial state
+      updateSSLFieldsVisibility();
+      updateTLSCertFieldVisibility();
+      updateTLSKeyFieldVisibility();
+      updateTLSCaFieldVisibility();
+
+      // Load existing TLS credentials if available
+      if (this.credentials && this.credentials.tlsCert) {
+        $("#node-config-input-tlsCert-visible").val(this.credentials.tlsCert);
+        $("#node-config-input-tlsCert").val(this.credentials.tlsCert);
+      }
+      
+      if (this.credentials && this.credentials.tlsKey) {
+        $("#node-config-input-tlsKey-visible").val(this.credentials.tlsKey);
+        $("#node-config-input-tlsKey").val(this.credentials.tlsKey);
+      }
+      
+      if (this.credentials && this.credentials.tlsCa) {
+        $("#node-config-input-tlsCa-visible").val(this.credentials.tlsCa);
+        $("#node-config-input-tlsCa").val(this.credentials.tlsCa);
+      }
+
+      // Sync visible TLS fields with hidden credentials fields
+      $("#node-config-input-tlsCert-visible").on("input", function() {
+        $("#node-config-input-tlsCert").val($(this).val());
+      });
+
+      $("#node-config-input-tlsKey-visible").on("input", function() {
+        $("#node-config-input-tlsKey").val($(this).val());
+      });
+
+      $("#node-config-input-tlsCa-visible").on("input", function() {
+        $("#node-config-input-tlsCa").val($(this).val());
+      });
+    },
+    oneditsave: function() {
+      // Save basic configuration
+      this.name = $("#node-config-input-name").val();
+      this.cluster = $("#node-config-input-cluster").is(':checked');
+
+      // Handle Host (TypedInput logic)
+      var hostType = $("#node-config-input-hostType").val();
+      var hostValue = $("#node-config-input-host-typed").typedInput('value');
+      
+      this.hostType = hostType;
+      if (hostType === 'str') {
+        this.host = hostValue || 'localhost';
+        this.hostContext = '';
+      } else {
+        this.host = 'localhost';
+        this.hostContext = hostValue || '';
+      }
+
+      // Handle Port (TypedInput logic)
+      var portType = $("#node-config-input-portType").val();
+      var portValue = $("#node-config-input-port-typed").typedInput('value');
+      
+      this.portType = portType;
+      if (portType === 'str') {
+        this.port = portValue || 6379;
+        this.portContext = '';
+      } else {
+        this.port = 6379;
+        this.portContext = portValue || '';
+      }
+
+      // Handle Database (TypedInput logic)
+      var databaseType = $("#node-config-input-databaseType").val();
+      var databaseValue = $("#node-config-input-database-typed").typedInput('value');
+      
+      this.databaseType = databaseType;
+      if (databaseType === 'str') {
+        this.database = databaseValue || 0;
+        this.databaseContext = '';
+      } else {
+        this.database = 0;
+        this.databaseContext = databaseValue || '';
+      }
+
+      // Handle Options (TypedInput logic)
+      var optionsType = $("#node-config-input-optionsType").val();
+      var optionsValue = $("#node-config-input-options-typed").typedInput('value');
+      
+      this.optionsType = optionsType;
+      if (optionsType === 'json') {
+        this.options = optionsValue || '{}';
+        this.optionsContext = '';
+      } else {
+        this.options = '{}';
+        this.optionsContext = optionsValue || '';
+      }
+
+      // Handle Password based on type
+      var passwordType = $("#node-config-input-password-type").val();
+      this.passwordType = passwordType;
+      
+      if (passwordType === 'str') {
+        this.passwordContext = '';
+        var visiblePassword = $("#node-config-input-password-visible").val();
+        if (visiblePassword) {
+          $("#node-config-input-password").val(visiblePassword);
+        }
+      } else {
+        var passwordValue = $("#node-config-input-password-context").val();
+        this.passwordContext = passwordValue || '';
+        $("#node-config-input-password").val('');
+      }
+
+      // Handle Username based on type
+      var usernameType = $("#node-config-input-username-type").val();
+      this.usernameType = usernameType;
+      
+      if (usernameType === 'str') {
+        this.usernameContext = '';
+        var visibleUsername = $("#node-config-input-username-visible").val();
+        if (visibleUsername) {
+          $("#node-config-input-username").val(visibleUsername);
+        }
+      } else {
+        var usernameValue = $("#node-config-input-username-context").val();
+        this.usernameContext = usernameValue || '';
+        $("#node-config-input-username").val('');
+      }
+      
+      // Handle SSL Configuration
+      this.enableTLS = $("#node-config-input-enableTLS").is(':checked');
+      this.tlsRejectUnauthorized = $("#node-config-input-tlsRejectUnauthorized").is(':checked');
+      
+      // Handle TLS Certificate based on type
+      var tlsCertType = $("#node-config-input-tlsCert-type").val();
+      this.tlsCertType = tlsCertType;
+      
+      if (tlsCertType === 'str') {
+        this.tlsCertContext = '';
+        var visibleTlsCert = $("#node-config-input-tlsCert-visible").val();
+        if (visibleTlsCert) {
+          $("#node-config-input-tlsCert").val(visibleTlsCert);
+        }
+      } else {
+        var tlsCertValue = $("#node-config-input-tlsCert-context").val();
+        this.tlsCertContext = tlsCertValue || '';
+        $("#node-config-input-tlsCert").val('');
+      }
+      
+      // Handle TLS Key based on type
+      var tlsKeyType = $("#node-config-input-tlsKey-type").val();
+      this.tlsKeyType = tlsKeyType;
+      
+      if (tlsKeyType === 'str') {
+        this.tlsKeyContext = '';
+        var visibleTlsKey = $("#node-config-input-tlsKey-visible").val();
+        if (visibleTlsKey) {
+          $("#node-config-input-tlsKey").val(visibleTlsKey);
+        }
+      } else {
+        var tlsKeyValue = $("#node-config-input-tlsKey-context").val();
+        this.tlsKeyContext = tlsKeyValue || '';
+        $("#node-config-input-tlsKey").val('');
+      }
+      
+      // Handle TLS CA based on type
+      var tlsCaType = $("#node-config-input-tlsCa-type").val();
+      this.tlsCaType = tlsCaType;
+      
+      if (tlsCaType === 'str') {
+        this.tlsCaContext = '';
+        var visibleTlsCa = $("#node-config-input-tlsCa-visible").val();
+        if (visibleTlsCa) {
+          $("#node-config-input-tlsCa").val(visibleTlsCa);
+        }
+      } else {
+        var tlsCaValue = $("#node-config-input-tlsCa-context").val();
+        this.tlsCaContext = tlsCaValue || '';
+        $("#node-config-input-tlsCa").val('');
+      }
+    }
+  });
+</script>
+
+<script type="text/html" data-template-name="redis-variable-config">
+  <div class="form-row">
+    <label for="node-config-input-name"><i class="fa fa-tag"></i> Name</label>
+    <input type="text" id="node-config-input-name" placeholder="Configuration Name" style="width: 70%;">
+  </div>
+  
+  <div class="form-row">
+    <label for="node-config-input-cluster"><i class="fa fa-sitemap"></i> Cluster Mode</label>
+    <input type="checkbox" id="node-config-input-cluster" style="display: inline-block; width: auto; vertical-align: middle;">
+    <span style="margin-left: 5px; vertical-align: middle;">Enable Redis Cluster mode</span>
+  </div>
+
+  <div class="form-row">
+    <label for="node-config-input-host-typed"><i class="fa fa-server"></i> Host</label>
+    <input type="text" id="node-config-input-host-typed" style="width: 70%;">
+    <input type="hidden" id="node-config-input-hostType">
+  </div>
+
+  <div class="form-row">
+    <label for="node-config-input-port-typed"><i class="fa fa-plug"></i> Port</label>
+    <input type="text" id="node-config-input-port-typed" style="width: 70%;">
+    <input type="hidden" id="node-config-input-portType">
+  </div>
+
+  <div class="form-row">
+    <label for="node-config-input-database-typed"><i class="fa fa-database"></i> Database</label>
+    <input type="text" id="node-config-input-database-typed" style="width: 70%;">
+    <input type="hidden" id="node-config-input-databaseType">
+  </div>
+
+  <div class="form-row">
+    <label for="node-config-input-username-type"><i class="fa fa-user"></i> Username Type</label>
+    <select id="node-config-input-username-type" style="width: 70%;">
+      <option value="str">Direct Username (secure)</option>
+      <option value="flow">Flow Context</option>
+      <option value="global">Global Context</option>
+      <option value="env">Environment Variable</option>
+    </select>
+  </div>
+
+  <div class="form-row" id="username-str-row">
+    <label for="node-config-input-username-visible"><i class="fa fa-user"></i> Username</label>
+    <input type="text" id="node-config-input-username-visible" style="width: 70%;" placeholder="Redis username (optional)">
+  </div>
+
+  <div class="form-row" id="username-context-row" style="display: none;">
+    <label for="node-config-input-username-context"><i class="fa fa-code"></i> Username Variable</label>
+    <input type="text" id="node-config-input-username-context" style="width: 70%;" placeholder="Variable name for username">
+  </div>
+
+  <div class="form-row">
+    <label for="node-config-input-password-type"><i class="fa fa-key"></i> Password Type</label>
+    <select id="node-config-input-password-type" style="width: 70%;">
+      <option value="str">Direct Password (secure)</option>
+      <option value="flow">Flow Context</option>
+      <option value="global">Global Context</option>
+      <option value="env">Environment Variable</option>
+    </select>
+  </div>
+
+  <div class="form-row" id="password-str-row">
+    <label for="node-config-input-password-visible"><i class="fa fa-key"></i> Password</label>
+    <input type="password" id="node-config-input-password-visible" style="width: 70%;" placeholder="Redis password (optional)">
+  </div>
+
+  <div class="form-row" id="password-context-row" style="display: none;">
+    <label for="node-config-input-password-context"><i class="fa fa-code"></i> Password Variable</label>
+    <input type="text" id="node-config-input-password-context" style="width: 70%;" placeholder="Variable name for password">
+  </div>
+
+  <!-- SSL/TLS Configuration -->
+  <div class="form-row">
+    <label for="node-config-input-enableTLS"><i class="fa fa-lock"></i> Enable SSL/TLS</label>
+    <input type="checkbox" id="node-config-input-enableTLS" style="display: inline-block; width: auto; vertical-align: middle;">
+    <span style="margin-left: 5px; vertical-align: middle;">Enable secure SSL/TLS connection</span>
+  </div>
+
+  <div id="ssl-config-section" style="display: none;">
+    <div class="form-row">
+      <label for="node-config-input-tlsRejectUnauthorized"><i class="fa fa-shield"></i> Verify Certificate</label>
+      <input type="checkbox" id="node-config-input-tlsRejectUnauthorized" style="display: inline-block; width: auto; vertical-align: middle;" checked>
+      <span style="margin-left: 5px; vertical-align: middle;">Reject unauthorized certificates (recommended)</span>
+    </div>
+
+    <div class="form-row">
+      <label for="node-config-input-tlsCert-type"><i class="fa fa-certificate"></i> Client Certificate Type</label>
+      <select id="node-config-input-tlsCert-type" style="width: 70%;">
+        <option value="str">Direct Certificate (secure)</option>
+        <option value="flow">Flow Context</option>
+        <option value="global">Global Context</option>
+        <option value="env">Environment Variable</option>
+      </select>
+    </div>
+
+    <div class="form-row" id="tlsCert-str-row">
+      <label for="node-config-input-tlsCert-visible"><i class="fa fa-certificate"></i> Client Certificate</label>
+      <textarea id="node-config-input-tlsCert-visible" style="width: 70%; height: 80px;" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"></textarea>
+    </div>
+
+    <div class="form-row" id="tlsCert-context-row" style="display: none;">
+      <label for="node-config-input-tlsCert-context"><i class="fa fa-code"></i> Certificate Variable</label>
+      <input type="text" id="node-config-input-tlsCert-context" style="width: 70%;" placeholder="Variable name for client certificate">
+    </div>
+
+    <div class="form-row">
+      <label for="node-config-input-tlsKey-type"><i class="fa fa-key"></i> Private Key Type</label>
+      <select id="node-config-input-tlsKey-type" style="width: 70%;">
+        <option value="str">Direct Key (secure)</option>
+        <option value="flow">Flow Context</option>
+        <option value="global">Global Context</option>
+        <option value="env">Environment Variable</option>
+      </select>
+    </div>
+
+    <div class="form-row" id="tlsKey-str-row">
+      <label for="node-config-input-tlsKey-visible"><i class="fa fa-key"></i> Private Key</label>
+      <textarea id="node-config-input-tlsKey-visible" style="width: 70%; height: 80px;" placeholder="-----BEGIN PRIVATE KEY-----&#10;...&#10;-----END PRIVATE KEY-----"></textarea>
+    </div>
+
+    <div class="form-row" id="tlsKey-context-row" style="display: none;">
+      <label for="node-config-input-tlsKey-context"><i class="fa fa-code"></i> Private Key Variable</label>
+      <input type="text" id="node-config-input-tlsKey-context" style="width: 70%;" placeholder="Variable name for private key">
+    </div>
+
+    <div class="form-row">
+      <label for="node-config-input-tlsCa-type"><i class="fa fa-shield"></i> CA Certificate Type</label>
+      <select id="node-config-input-tlsCa-type" style="width: 70%;">
+        <option value="str">Direct CA Certificate (secure)</option>
+        <option value="flow">Flow Context</option>
+        <option value="global">Global Context</option>
+        <option value="env">Environment Variable</option>
+      </select>
+    </div>
+
+    <div class="form-row" id="tlsCa-str-row">
+      <label for="node-config-input-tlsCa-visible"><i class="fa fa-shield"></i> CA Certificate</label>
+      <textarea id="node-config-input-tlsCa-visible" style="width: 70%; height: 80px;" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE----- (optional)"></textarea>
+    </div>
+
+    <div class="form-row" id="tlsCa-context-row" style="display: none;">
+      <label for="node-config-input-tlsCa-context"><i class="fa fa-code"></i> CA Certificate Variable</label>
+      <input type="text" id="node-config-input-tlsCa-context" style="width: 70%;" placeholder="Variable name for CA certificate">
+    </div>
+  </div>
+
+  <div class="form-row">
+    <label for="node-config-input-options-typed"><i class="fa fa-cogs"></i> Advanced Options</label>
+    <input type="text" id="node-config-input-options-typed" style="width: 70%;">
+    <input type="hidden" id="node-config-input-optionsType">
+  </div>
+
+  <!-- Hidden fields for Node-RED credentials system -->
+  <input type="text" id="node-config-input-username" style="display: none;">
+  <input type="password" id="node-config-input-password" style="display: none;">
+  <input type="text" id="node-config-input-usernameContext" style="display: none;">
+  <input type="text" id="node-config-input-passwordContext" style="display: none;">
+  <input type="password" id="node-config-input-tlsCert" style="display: none;">
+  <input type="password" id="node-config-input-tlsKey" style="display: none;">
+  <input type="password" id="node-config-input-tlsCa" style="display: none;">
+  <input type="text" id="node-config-input-tlsCertContext" style="display: none;">
+  <input type="text" id="node-config-input-tlsKeyContext" style="display: none;">
+  <input type="text" id="node-config-input-tlsCaContext" style="display: none;">
+</script>
+
+<script type="text/x-red" data-help-name="redis-variable-config">
+  <p>Redis configuration node with flexible connection management:</p>
+  
+  <h3>Connection Settings</h3>
+  <ul>
+    <li><b>Host</b>: Redis server hostname or IP address</li>
+    <li><b>Port</b>: Redis server port (default: 6379)</li>
+    <li><b>Database</b>: Redis database number (default: 0)</li>
+    <li><b>Cluster Mode</b>: Enable for Redis Cluster deployments</li>
+  </ul>
+  
+  <h3>Authentication</h3>
+  <ul>
+    <li><b>Username</b>: Redis username (Redis 6.0+ ACL support)</li>
+    <li><b>Password</b>: Redis password for authentication</li>
+  </ul>
+  
+  <h3>Credential Sources</h3>
+  <p>All connection parameters support multiple input types:</p>
+  <ul>
+    <li><b>String</b>: Direct value stored securely in Node-RED credentials</li>
+    <li><b>Flow Context</b>: Retrieved from flow context variables</li>
+    <li><b>Global Context</b>: Retrieved from global context variables</li>
+    <li><b>Environment Variable</b>: Retrieved from environment variables</li>
+  </ul>
+  
+  <h3>Advanced Options</h3>
+  <p>JSON object with additional ioredis connection options:</p>
+  <pre>{
+  "connectTimeout": 10000,
+  "lazyConnect": true,
+  "keepAlive": 30000,
+  "family": 4,
+  "retryDelayOnFailover": 100
+}</pre>
+  
+  <h3>SSL/TLS Configuration</h3>
+  <ul>
+    <li><b>Enable SSL/TLS</b>: Enable secure connection to Redis server</li>
+    <li><b>Verify Certificate</b>: Validate server certificates (recommended for production)</li>
+    <li><b>Client Certificate</b>: Client certificate for mutual TLS authentication</li>
+    <li><b>Private Key</b>: Private key corresponding to client certificate</li>
+    <li><b>CA Certificate</b>: Certificate Authority certificate for custom CAs</li>
+  </ul>
+  
+  <h3>SSL Examples</h3>
+  <p><b>Basic SSL (server verification only):</b></p>
+  <ul>
+    <li>Enable SSL/TLS: ✓</li>
+    <li>Verify Certificate: ✓</li>
+    <li>Client Certificate: (empty)</li>
+  </ul>
+  
+  <p><b>Mutual TLS (client + server authentication):</b></p>
+  <ul>
+    <li>Enable SSL/TLS: ✓</li>
+    <li>Verify Certificate: ✓</li>
+    <li>Client Certificate: Your client certificate</li>
+    <li>Private Key: Your private key</li>
+    <li>CA Certificate: Custom CA if needed</li>
+  </ul>
+  
+  <p><b>Self-signed certificates:</b></p>
+  <ul>
+    <li>Enable SSL/TLS: ✓</li>
+    <li>Verify Certificate: ✗ (disable for self-signed)</li>
+    <li>CA Certificate: Your self-signed CA</li>
+  </ul>
+  
+  <h3>Security Notes</h3>
+  <ul>
+    <li>String credentials are stored encrypted in Node-RED's credentials store</li>
+    <li>Context types only store variable names, actual credentials retrieved at runtime</li>
+    <li>Use environment variables for containerized deployments</li>
+    <li>Enable Redis AUTH and use strong passwords</li>
+    <li>Consider using Redis ACLs for fine-grained access control</li>
+    <li><b>SSL/TLS is highly recommended for production environments</b></li>
+    <li>Always verify certificates in production unless using trusted self-signed CAs</li>
+    <li>Store certificates and keys securely, preferably in environment variables</li>
+  </ul>
+  
+  <h3>Examples</h3>
+  <p><b>Environment-based configuration:</b></p>
+  <ul>
+    <li>Host: Environment Variable → <code>REDIS_HOST</code></li>
+    <li>Password: Environment Variable → <code>REDIS_PASSWORD</code></li>
+  </ul>
+  
+  <p><b>Context-based configuration:</b></p>
+  <ul>
+    <li>Host: Global Context → <code>redis_config.host</code></li>
+    <li>Port: Global Context → <code>redis_config.port</code></li>
+  </ul>
+</script>
+
+<style>
+  .form-row {
+    margin-bottom: 10px;
+  }
+  .form-row label {
+    display: inline-block;
+    width: 120px;
+    vertical-align: top;
+    margin-top: 6px;
+  }
+  .form-row input[type="text"],
+  .form-row input[type="password"],
+  .form-row select {
+    width: 70%;
+  }
+  .form-row input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+    vertical-align: middle;
+  }
+  .help-text {
+    font-size: 0.8em;
+    color: #666;
+    margin-top: 4px;
+    margin-left: 125px;
+  }
+  .error-text {
+    color: #d00;
+    font-size: 0.8em;
+    margin-top: 4px;
+  }
+  .input-error {
+    border-color: #d00 !important;
+  }
+</style> 

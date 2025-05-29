@@ -1,0 +1,284 @@
+<script type="text/javascript">
+    RED.nodes.registerType("redis-variable", {
+        category: "Redis",
+        color: "#D8BFD8",
+        defaults: {
+            name: { value: "" },
+            redisConfig: { value: "", type: "redis-variable-config" },
+            operation: { value: "get" }
+        },
+        inputs: 1,
+        outputs: 1,
+        icon: "font-awesome/fa-database",
+        label: function() {
+            return this.name || "Redis (" + (this.operation || "get") + ")";
+        }
+    });
+</script>
+
+<script type="text/html" data-template-name="redis-variable">
+    <div class="form-row">
+        <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-input-name" placeholder="Name">
+    </div>
+    <div class="form-row">
+        <label for="node-input-redisConfig"><i class="fa fa-cog"></i> Redis Config</label>
+        <input type="text" id="node-input-redisConfig">
+    </div>
+    <div class="form-row">
+        <label for="node-input-operation"><i class="fa fa-tasks"></i> Operation</label>
+        <select id="node-input-operation">
+            <optgroup label="Basic Operations">
+                <option value="get">GET - Get value</option>
+                <option value="set">SET - Set value</option>
+                <option value="del">DEL - Delete key</option>
+                <option value="exists">EXISTS - Check if key exists</option>
+            </optgroup>
+            <optgroup label="TTL Operations">
+                <option value="ttl">TTL - Get time to live</option>
+                <option value="expire">EXPIRE - Set expiration</option>
+                <option value="persist">PERSIST - Remove expiration</option>
+            </optgroup>
+            <optgroup label="Counter Operations">
+                <option value="incr">INCR - Increment by 1</option>
+                <option value="decr">DECR - Decrement by 1</option>
+                <option value="incrby">INCRBY - Increment by N</option>
+                <option value="decrby">DECRBY - Decrement by N</option>
+            </optgroup>
+            <optgroup label="List Operations">
+                <option value="lpush">LPUSH - Push to left</option>
+                <option value="rpush">RPUSH - Push to right</option>
+                <option value="lpop">LPOP - Pop from left</option>
+                <option value="rpop">RPOP - Pop from right</option>
+                <option value="llen">LLEN - List length</option>
+                <option value="lrange">LRANGE - Get range</option>
+            </optgroup>
+            <optgroup label="Hash Operations">
+                <option value="hset">HSET - Set hash field</option>
+                <option value="hget">HGET - Get hash field</option>
+                <option value="hgetall">HGETALL - Get all fields</option>
+                <option value="hdel">HDEL - Delete hash field</option>
+            </optgroup>
+            <optgroup label="Pub/Sub Operations">
+                <option value="publish">PUBLISH - Publish message</option>
+            </optgroup>
+        </select>
+    </div>
+</script>
+
+<script type="text/x-red" data-help-name="redis-variable">
+    <p>Redis node for comprehensive operations with universal payload-based configuration.</p>
+    
+    <h3>Configuration</h3>
+    <p>Select or create a Redis configuration that contains your connection settings.</p>
+    
+    <h3>Operations</h3>
+    
+    <h4>Basic Operations</h4>
+    <ul>
+        <li><b>GET</b>: Retrieve value by key</li>
+        <li><b>SET</b>: Store value with key (supports TTL)</li>
+        <li><b>DEL</b>: Delete key(s)</li>
+        <li><b>EXISTS</b>: Check if key(s) exist</li>
+    </ul>
+    
+    <h4>TTL Operations</h4>
+    <ul>
+        <li><b>TTL</b>: Get remaining time to live in seconds</li>
+        <li><b>EXPIRE</b>: Set expiration time for existing key</li>
+        <li><b>PERSIST</b>: Remove expiration from key</li>
+    </ul>
+    
+    <h4>Counter Operations</h4>
+    <ul>
+        <li><b>INCR</b>: Increment value by 1</li>
+        <li><b>DECR</b>: Decrement value by 1</li>
+        <li><b>INCRBY</b>: Increment value by N</li>
+        <li><b>DECRBY</b>: Decrement value by N</li>
+    </ul>
+    
+    <h4>List Operations</h4>
+    <ul>
+        <li><b>LPUSH</b>: Add element to beginning of list</li>
+        <li><b>RPUSH</b>: Add element to end of list</li>
+        <li><b>LPOP</b>: Remove and return first element</li>
+        <li><b>RPOP</b>: Remove and return last element</li>
+        <li><b>LLEN</b>: Get list length</li>
+        <li><b>LRANGE</b>: Get range of elements</li>
+    </ul>
+    
+    <h4>Hash Operations</h4>
+    <ul>
+        <li><b>HSET</b>: Set hash field value</li>
+        <li><b>HGET</b>: Get hash field value</li>
+        <li><b>HGETALL</b>: Get all hash fields</li>
+        <li><b>HDEL</b>: Delete hash field(s)</li>
+    </ul>
+    
+    <h4>Pub/Sub Operations</h4>
+    <ul>
+        <li><b>PUBLISH</b>: Publish message to channel</li>
+    </ul>
+    
+    <h3>Universal Payload Format</h3>
+    <p>All parameters are passed via <code>msg.payload</code>. The payload can be a string (for simple operations) or an object with specific properties.</p>
+    
+    <h3>Examples</h3>
+    
+    <h4>Basic Operations</h4>
+    <pre>// GET - simple format
+{
+  "payload": "user:123"
+}
+
+// GET - object format
+{
+  "payload": {"key": "user:123"}
+}
+
+// SET with value
+{
+  "payload": {
+    "key": "user:123",
+    "value": "John Doe"
+  }
+}
+
+// SET with TTL (expires in 1 hour)
+{
+  "payload": {
+    "key": "session:abc123",
+    "value": {"userId": 42, "role": "admin"},
+    "ttl": 3600
+  }
+}
+
+// DELETE multiple keys
+{
+  "payload": {
+    "keys": ["cache:page1", "cache:page2", "temp:data"]
+  }
+}</pre>
+    
+    <h4>TTL Operations</h4>
+    <pre>// Check TTL
+{
+  "payload": "session:abc123"
+}
+
+// Set expiration
+{
+  "payload": {
+    "key": "temp:data",
+    "ttl": 1800
+  }
+}
+
+// Remove expiration
+{
+  "payload": "permanent:key"
+}</pre>
+    
+    <h4>Counter Operations</h4>
+    <pre>// Increment by 1
+{
+  "payload": "page:views"
+}
+
+// Increment by amount
+{
+  "payload": {
+    "key": "score:player1",
+    "amount": 100
+  }
+}</pre>
+    
+    <h4>List Operations</h4>
+    <pre>// Add to list
+{
+  "payload": {
+    "key": "queue:tasks",
+    "value": {"task": "process_order", "id": 123}
+  }
+}
+
+// Get range
+{
+  "payload": {
+    "key": "queue:tasks",
+    "start": 0,
+    "stop": 9
+  }
+}
+
+// Pop from list
+{
+  "payload": "queue:tasks"
+}</pre>
+    
+    <h4>Hash Operations</h4>
+    <pre>// Set single field
+{
+  "payload": {
+    "key": "user:123",
+    "field": "email",
+    "value": "user@example.com"
+  }
+}
+
+// Set multiple fields
+{
+  "payload": {
+    "key": "user:123",
+    "fields": {
+      "name": "John Doe",
+      "age": 30,
+      "city": "New York"
+    }
+  }
+}
+
+// Get field
+{
+  "payload": {
+    "key": "user:123",
+    "field": "email"
+  }
+}
+
+// Get all fields
+{
+  "payload": "user:123"
+}</pre>
+    
+    <h4>Pub/Sub Operations</h4>
+    <pre>// Publish message
+{
+  "payload": {
+    "channel": "notifications",
+    "message": {
+      "type": "alert",
+      "text": "System maintenance"
+    }
+  }
+}</pre>
+    
+    <h3>Automatic JSON Handling</h3>
+    <p>The node automatically detects and handles JSON data:</p>
+    <ul>
+        <li><b>When storing</b>: JavaScript objects are automatically serialized to JSON strings</li>
+        <li><b>When retrieving</b>: Valid JSON strings are automatically parsed back to objects</li>
+        <li><b>Simple values</b>: Strings, numbers, and other simple types are handled as-is</li>
+        <li>Applies to all operations that handle values (GET, SET, lists, hashes, pub/sub)</li>
+    </ul>
+    
+    <h3>Output Examples</h3>
+    <ul>
+        <li><b>GET</b>: Returns the stored value (auto-parsed if JSON)</li>
+        <li><b>SET</b>: <code>{ success: true, result: "OK", ttl: 3600 }</code></li>
+        <li><b>TTL</b>: <code>{ key: "mykey", ttl: 3600, status: "expires in 3600 seconds" }</code></li>
+        <li><b>INCR</b>: <code>{ key: "counter", value: 42 }</code></li>
+        <li><b>LPUSH</b>: <code>{ success: true, key: "list", length: 5, operation: "lpush" }</code></li>
+        <li><b>HGETALL</b>: <code>{ name: "John", age: 30, email: "john@example.com" }</code> (auto-parsed)</li>
+    </ul>
+</script> 

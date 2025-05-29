@@ -1,0 +1,427 @@
+[
+  {
+    "id": "universal-examples",
+    "type": "tab",
+    "label": "Universal Payload Examples",
+    "disabled": false,
+    "info": "Examples using universal payload format with automatic JSON handling"
+  },
+  {
+    "id": "get-simple",
+    "type": "inject",
+    "z": "universal-examples",
+    "name": "GET (simple)",
+    "props": [
+      {
+        "p": "payload",
+        "v": "user:123",
+        "vt": "str"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "x": 120,
+    "y": 60,
+    "wires": [["get-node"]]
+  },
+  {
+    "id": "get-object",
+    "type": "inject",
+    "z": "universal-examples",
+    "name": "GET (object)",
+    "props": [
+      {
+        "p": "payload",
+        "v": "{\"key\":\"user:123\"}",
+        "vt": "json"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "x": 120,
+    "y": 100,
+    "wires": [["get-node"]]
+  },
+  {
+    "id": "get-node",
+    "type": "redis-variable",
+    "z": "universal-examples",
+    "name": "GET",
+    "redisConfig": "redis-config",
+    "operation": "get",
+    "x": 290,
+    "y": 80,
+    "wires": [["debug-output"]]
+  },
+  {
+    "id": "set-simple",
+    "type": "inject",
+    "z": "universal-examples",
+    "name": "SET with value",
+    "props": [
+      {
+        "p": "payload",
+        "v": "{\"key\":\"user:123\",\"value\":\"John Doe\"}",
+        "vt": "json"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "x": 130,
+    "y": 160,
+    "wires": [["set-node"]]
+  },
+  {
+    "id": "set-ttl",
+    "type": "inject",
+    "z": "universal-examples",
+    "name": "SET with TTL",
+    "props": [
+      {
+        "p": "payload",
+        "v": "{\"key\":\"session:abc123\",\"value\":{\"userId\":42,\"role\":\"admin\"},\"ttl\":3600}",
+        "vt": "json"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "x": 120,
+    "y": 200,
+    "wires": [["set-node"]]
+  },
+  {
+    "id": "set-node",
+    "type": "redis-variable",
+    "z": "universal-examples",
+    "name": "SET",
+    "redisConfig": "redis-config",
+    "operation": "set",
+    "x": 290,
+    "y": 180,
+    "wires": [["debug-output"]]
+  },
+  {
+    "id": "counter-incr",
+    "type": "inject",
+    "z": "universal-examples",
+    "name": "INCR (simple)",
+    "props": [
+      {
+        "p": "payload",
+        "v": "page:views",
+        "vt": "str"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "x": 130,
+    "y": 260,
+    "wires": [["incr-node"]]
+  },
+  {
+    "id": "counter-incrby",
+    "type": "inject",
+    "z": "universal-examples",
+    "name": "INCRBY amount",
+    "props": [
+      {
+        "p": "payload",
+        "v": "{\"key\":\"score:player1\",\"amount\":100}",
+        "vt": "json"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "x": 130,
+    "y": 300,
+    "wires": [["incrby-node"]]
+  },
+  {
+    "id": "incr-node",
+    "type": "redis-variable",
+    "z": "universal-examples",
+    "name": "INCR",
+    "redisConfig": "redis-config",
+    "operation": "incr",
+    "x": 290,
+    "y": 260,
+    "wires": [["debug-output"]]
+  },
+  {
+    "id": "incrby-node",
+    "type": "redis-variable",
+    "z": "universal-examples",
+    "name": "INCRBY",
+    "redisConfig": "redis-config",
+    "operation": "incrby",
+    "x": 290,
+    "y": 300,
+    "wires": [["debug-output"]]
+  },
+  {
+    "id": "list-push",
+    "type": "inject",
+    "z": "universal-examples",
+    "name": "LPUSH task",
+    "props": [
+      {
+        "p": "payload",
+        "v": "{\"key\":\"queue:tasks\",\"value\":{\"task\":\"process_order\",\"id\":12345,\"priority\":\"high\"}}",
+        "vt": "json"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "x": 120,
+    "y": 360,
+    "wires": [["lpush-node"]]
+  },
+  {
+    "id": "list-range",
+    "type": "inject",
+    "z": "universal-examples",
+    "name": "LRANGE",
+    "props": [
+      {
+        "p": "payload",
+        "v": "{\"key\":\"queue:tasks\",\"start\":0,\"stop\":4}",
+        "vt": "json"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "x": 110,
+    "y": 400,
+    "wires": [["lrange-node"]]
+  },
+  {
+    "id": "list-pop",
+    "type": "inject",
+    "z": "universal-examples",
+    "name": "LPOP (simple)",
+    "props": [
+      {
+        "p": "payload",
+        "v": "queue:tasks",
+        "vt": "str"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "x": 120,
+    "y": 440,
+    "wires": [["lpop-node"]]
+  },
+  {
+    "id": "lpush-node",
+    "type": "redis-variable",
+    "z": "universal-examples",
+    "name": "LPUSH",
+    "redisConfig": "redis-config",
+    "operation": "lpush",
+    "x": 290,
+    "y": 360,
+    "wires": [["debug-output"]]
+  },
+  {
+    "id": "lrange-node",
+    "type": "redis-variable",
+    "z": "universal-examples",
+    "name": "LRANGE",
+    "redisConfig": "redis-config",
+    "operation": "lrange",
+    "x": 290,
+    "y": 400,
+    "wires": [["debug-output"]]
+  },
+  {
+    "id": "lpop-node",
+    "type": "redis-variable",
+    "z": "universal-examples",
+    "name": "LPOP",
+    "redisConfig": "redis-config",
+    "operation": "lpop",
+    "x": 290,
+    "y": 440,
+    "wires": [["debug-output"]]
+  },
+  {
+    "id": "hash-set-single",
+    "type": "inject",
+    "z": "universal-examples",
+    "name": "HSET single field",
+    "props": [
+      {
+        "p": "payload",
+        "v": "{\"key\":\"user:123\",\"field\":\"email\",\"value\":\"john.doe@example.com\"}",
+        "vt": "json"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "x": 140,
+    "y": 500,
+    "wires": [["hset-node"]]
+  },
+  {
+    "id": "hash-set-multi",
+    "type": "inject",
+    "z": "universal-examples",
+    "name": "HSET multiple fields",
+    "props": [
+      {
+        "p": "payload",
+        "v": "{\"key\":\"user:123\",\"fields\":{\"name\":\"John Doe\",\"age\":30,\"city\":\"New York\",\"active\":true}}",
+        "vt": "json"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "x": 150,
+    "y": 540,
+    "wires": [["hset-node"]]
+  },
+  {
+    "id": "hash-get",
+    "type": "inject",
+    "z": "universal-examples",
+    "name": "HGET field",
+    "props": [
+      {
+        "p": "payload",
+        "v": "{\"key\":\"user:123\",\"field\":\"email\"}",
+        "vt": "json"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "x": 120,
+    "y": 580,
+    "wires": [["hget-node"]]
+  },
+  {
+    "id": "hash-getall",
+    "type": "inject",
+    "z": "universal-examples",
+    "name": "HGETALL (simple)",
+    "props": [
+      {
+        "p": "payload",
+        "v": "user:123",
+        "vt": "str"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "x": 140,
+    "y": 620,
+    "wires": [["hgetall-node"]]
+  },
+  {
+    "id": "hset-node",
+    "type": "redis-variable",
+    "z": "universal-examples",
+    "name": "HSET",
+    "redisConfig": "redis-config",
+    "operation": "hset",
+    "x": 330,
+    "y": 520,
+    "wires": [["debug-output"]]
+  },
+  {
+    "id": "hget-node",
+    "type": "redis-variable",
+    "z": "universal-examples",
+    "name": "HGET",
+    "redisConfig": "redis-config",
+    "operation": "hget",
+    "x": 290,
+    "y": 580,
+    "wires": [["debug-output"]]
+  },
+  {
+    "id": "hgetall-node",
+    "type": "redis-variable",
+    "z": "universal-examples",
+    "name": "HGETALL",
+    "redisConfig": "redis-config",
+    "operation": "hgetall",
+    "x": 310,
+    "y": 620,
+    "wires": [["debug-output"]]
+  },
+  {
+    "id": "publish-msg",
+    "type": "inject",
+    "z": "universal-examples",
+    "name": "PUBLISH message",
+    "props": [
+      {
+        "p": "payload",
+        "v": "{\"channel\":\"notifications\",\"message\":{\"type\":\"alert\",\"text\":\"System maintenance in 5 minutes\"}}",
+        "vt": "json"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "x": 140,
+    "y": 680,
+    "wires": [["publish-node"]]
+  },
+  {
+    "id": "publish-node",
+    "type": "redis-variable",
+    "z": "universal-examples",
+    "name": "PUBLISH",
+    "redisConfig": "redis-config",
+    "operation": "publish",
+    "x": 310,
+    "y": 680,
+    "wires": [["debug-output"]]
+  },
+  {
+    "id": "debug-output",
+    "type": "debug",
+    "z": "universal-examples",
+    "name": "Output",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 500,
+    "y": 400,
+    "wires": []
+  }
+] 
