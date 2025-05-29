@@ -2,6 +2,8 @@
 
 A comprehensive Node-RED node for Redis operations with flexible connection management and modern features.
 
+**Developed by Andrii Lototskyi**
+
 ## 🚀 Features
 
 ### 🔧 **Flexible Connection Management**
@@ -12,6 +14,12 @@ A comprehensive Node-RED node for Redis operations with flexible connection mana
 - **Advanced Configuration**: JSON-based advanced options for Redis client
 
 ### 📊 **Comprehensive Redis Operations**
+
+#### **Universal Payload Interface**
+- **Flexible Input**: All operations use `msg.payload` for parameters
+- **Simple Format**: Single keys can be passed as strings
+- **Object Format**: Complex operations use structured objects
+- **Consistent Returns**: Standardized response format across all operations
 
 #### **Basic Operations**
 - **GET** - Retrieve value by key
@@ -153,101 +161,141 @@ Password: Flow Context → redis_password
 
 ## Operations
 
+**Universal Payload Interface**: All Redis operations use a unified `msg.payload` interface. Parameters can be passed as simple strings (for single keys) or as objects with specific properties. This provides flexibility while maintaining simplicity.
+
 ### Basic Operations
 
 #### GET - Retrieve Value
 ```javascript
-msg = {
-  topic: "mykey",
-  payload: null
-}
+// Simple key format
+msg.payload = "user:123";
+// Returns: { payload: "stored_value" }
+
+// Object format
+msg.payload = { 
+    key: "user:123" 
+};
 // Returns: { payload: "stored_value" }
 ```
 
 #### SET - Store Value
 ```javascript
-msg = {
-  topic: "mykey",
-  payload: "myvalue"
-}
-// Returns: { payload: { success: true, result: "OK" } }
+// Simple SET
+msg.payload = {
+  key: "user:123",
+  value: "John Doe"
+};
+// Returns: { payload: { success: true, result: "OK", ttl: null } }
+
+// SET with TTL
+msg.payload = {
+  key: "session:abc123",
+  value: { userId: 42, role: "admin" },
+  ttl: 3600
+};
+// Returns: { payload: { success: true, result: "OK", ttl: 3600 } }
 ```
 
 #### DEL - Delete Key
 ```javascript
-msg = {
-  topic: "mykey",
-  payload: null
-}
-// Returns: { payload: { success: true, deleted: 1 } }
+// Delete single key
+msg.payload = { 
+    key: "mykey" 
+};
+// Or simple format
+msg.payload = "mykey";
+// Returns: { payload: { success: true, deleted: 1, keys: ["mykey"] } }
+
+// Delete multiple keys
+msg.payload = { 
+    keys: ["key1", "key2", "key3"] 
+};
+// Returns: { payload: { success: true, deleted: 3, keys: ["key1", "key2", "key3"] } }
 ```
 
 #### EXISTS - Check Key Existence
 ```javascript
-msg = {
-  topic: "mykey",
-  payload: null
-}
-// Returns: { payload: { exists: true } }
-```
+// Check single key
+msg.payload = "mykey";
+// Or object format
+msg.payload = { 
+    key: "mykey" 
+};
+// Returns: { payload: { exists: true, count: 1, keys: ["mykey"] } }
 
-#### EXPIRE - Set Key Expiration
-```javascript
-msg = {
-  topic: "mykey",
-  payload: 3600  // seconds
-}
-// Returns: { payload: { success: true } }
+// Check multiple keys
+msg.payload = { 
+    keys: ["key1", "key2", "key3"] 
+};
+// Returns: { payload: { exists: true, count: 2, keys: ["key1", "key2", "key3"] } }
 ```
 
 #### TTL - Get Time To Live
 ```javascript
-msg = {
-  topic: "mykey",
-  payload: null
-}
-// Returns: { payload: { ttl: 3600 } }
+msg.payload = "mykey";
+// Returns: { payload: { key: "mykey", ttl: 3600, status: "expires in 3600 seconds" } }
+```
+
+#### EXPIRE - Set Key Expiration
+```javascript
+msg.payload = {
+  key: "mykey",
+  ttl: 3600
+};
+// Returns: { payload: { success: true, key: "mykey", ttl: 3600, message: "Expiration set" } }
+```
+
+#### PERSIST - Remove Expiration
+```javascript
+msg.payload = "mykey";
+// Returns: { payload: { success: true, key: "mykey", message: "Expiration removed" } }
 ```
 
 #### INCR/DECR - Increment/Decrement
 ```javascript
-msg = {
-  topic: "counter",
-  payload: null
-}
-// Returns: { payload: { value: 1 } }
+// Simple increment
+msg.payload = "counter";
+// Returns: { payload: { key: "counter", value: 1 } }
+
+// Increment by amount
+msg.payload = {
+  key: "score",
+  amount: 10
+};
+// Returns: { payload: { key: "score", value: 110, increment: 10 } }
 ```
 
 ### List Operations
 
 #### LPUSH/RPUSH - Add to List
 ```javascript
-msg = {
-  topic: "mylist",
-  payload: "item1"
-}
-// Returns: { payload: { success: true, length: 1 } }
+msg.payload = {
+  key: "mylist",
+  value: "item1"
+};
+// Returns: { payload: { success: true, key: "mylist", length: 1, operation: "lpush" } }
 ```
 
 #### LPOP/RPOP - Remove from List
 ```javascript
-msg = {
-  topic: "mylist",
-  payload: null
-}
+msg.payload = "mylist";
 // Returns: { payload: "item1" }
+```
+
+#### LLEN - Get List Length
+```javascript
+msg.payload = "mylist";
+// Returns: { payload: { key: "mylist", length: 5 } }
 ```
 
 #### LRANGE - Get List Range
 ```javascript
-msg = {
-  topic: "mylist",
-  payload: {
-    start: 0,
-    stop: -1
-  }
-}
-// Returns: { payload: ["item1", "item2", "item3"] }
+msg.payload = {
+  key: "mylist",
+  start: 0,
+  stop: -1
+};
+// Returns: { payload: { key: "mylist", range: {start: 0, stop: -1}, values: ["item1", "item2", "item3"], count: 3 } }
 ```
 
 #### BLPOP/BRPOP - Blocking Pop
@@ -258,71 +306,66 @@ Configure timeout in node settings. These operations run continuously and emit m
 #### HSET - Set Hash Field
 ```javascript
 // Single field
-msg = {
-  topic: "myhash",
-  payload: {
-    field: "name",
-    value: "John"
-  }
-}
+msg.payload = {
+  key: "myhash",
+  field: "name",
+  value: "John"
+};
+// Returns: { payload: { success: true, key: "myhash", field: "name", created: true } }
 
 // Multiple fields
-msg = {
-  topic: "myhash",
-  payload: {
+msg.payload = {
+  key: "myhash",
+  fields: {
     name: "John",
     age: 30,
     city: "New York"
   }
-}
-// Returns: { payload: { success: true, result: 1 } }
+};
+// Returns: { payload: { success: true, key: "myhash", fields: ["name", "age", "city"], created: 3 } }
 ```
 
 #### HGET - Get Hash Field
 ```javascript
-msg = {
-  topic: "myhash",
-  payload: {
-    field: "name"
-  }
-}
-// Or simply:
-msg = {
-  topic: "myhash",
-  payload: "name"
-}
+msg.payload = {
+  key: "myhash",
+  field: "name"
+};
 // Returns: { payload: "John" }
 ```
 
 #### HGETALL - Get All Hash Fields
 ```javascript
-msg = {
-  topic: "myhash",
-  payload: null
-}
+msg.payload = "myhash";
 // Returns: { payload: { name: "John", age: "30", city: "New York" } }
 ```
 
 #### HDEL - Delete Hash Field
 ```javascript
-msg = {
-  topic: "myhash",
-  payload: {
-    field: "age"
-  }
-}
-// Returns: { payload: { success: true, deleted: 1 } }
+// Delete single field
+msg.payload = {
+  key: "myhash",
+  field: "age"
+};
+// Returns: { payload: { success: true, key: "myhash", deleted: 1, fields: ["age"] } }
+
+// Delete multiple fields
+msg.payload = {
+  key: "myhash",
+  fields: ["age", "city"]
+};
+// Returns: { payload: { success: true, key: "myhash", deleted: 2, fields: ["age", "city"] } }
 ```
 
 ### Pub/Sub Operations
 
 #### PUBLISH - Publish Message
 ```javascript
-msg = {
-  topic: "mychannel",
-  payload: "Hello World"
-}
-// Returns: { payload: { success: true, subscribers: 2 } }
+msg.payload = {
+  channel: "mychannel",
+  message: "Hello World"
+};
+// Returns: { payload: { success: true, channel: "mychannel", subscribers: 2, message: "Hello World" } }
 ```
 
 #### SUBSCRIBE - Subscribe to Channel
@@ -353,21 +396,8 @@ Configure pattern in node settings (e.g., "news.*"):
 // Configure Lua script in node editor:
 // return redis.call('GET', KEYS[1])
 
-msg = {
-  payload: ["mykey"]  // Array of keys and arguments
-}
+msg.payload = ["mykey"];  // Array of keys and arguments
 // Returns: { payload: "script_result" }
-```
-
-#### Generic Command Execution
-```javascript
-msg = {
-  payload: {
-    command: "MGET",
-    args: ["key1", "key2", "key3"]
-  }
-}
-// Returns: { payload: ["value1", "value2", "value3"] }
 ```
 
 #### Redis Instance in Context
@@ -391,28 +421,24 @@ The module automatically detects and handles JSON data without any configuration
 ### 📝 Examples
 
 #### Storing Objects
-```json
-{
-  "payload": {
-    "key": "user:123",
-    "value": {
-      "name": "John Doe",
-      "age": 30,
-      "preferences": {
-        "theme": "dark",
-        "language": "en"
-      }
+```javascript
+msg.payload = {
+  key: "user:123",
+  value: {
+    name: "John Doe",
+    age: 30,
+    preferences: {
+      theme: "dark",
+      language: "en"
     }
   }
-}
+};
 // Automatically stored as: '{"name":"John Doe","age":30,"preferences":{"theme":"dark","language":"en"}}'
 ```
 
 #### Retrieving Objects
-```json
-{
-  "payload": "user:123"
-}
+```javascript
+msg.payload = "user:123";
 // Returns: {
 //   "name": "John Doe",
 //   "age": 30,
@@ -424,18 +450,30 @@ The module automatically detects and handles JSON data without any configuration
 ```
 
 #### Mixed Data Types
-```json
+```javascript
 // Store simple string
-{"payload": {"key": "message", "value": "Hello World"}}
+msg.payload = {
+    key: "message", 
+    value: "Hello World"
+};
 // Returns: "Hello World"
 
 // Store number  
-{"payload": {"key": "count", "value": 42}}
+msg.payload = {
+    key: "count", 
+    value: 42
+};
 // Returns: "42"
 
 // Store object
-{"payload": {"key": "config", "value": {"debug": true, "timeout": 5000}}}
-// Returns: {"debug": true, "timeout": 5000}
+msg.payload = {
+    key: "config", 
+    value: {
+        debug: true, 
+        timeout: 5000
+    }
+};
+// Returns: {debug: true, timeout: 5000}
 ```
 
 ## Connection Management
@@ -475,57 +513,55 @@ All operations include comprehensive error handling:
 ### Basic Key-Value Storage
 ```javascript
 // Store user session
-msg = {
-  topic: "session:abc123",
-  payload: {
+msg.payload = {
+  key: "session:abc123",
+  value: {
     userId: 456,
     loginTime: new Date().toISOString(),
     permissions: ["read", "write"]
-  }
-}
+  },
+  ttl: 3600  // 1 hour expiration
+};
 ```
 
 ### Message Queue with Lists
 ```javascript
-// Producer
-msg = {
-  topic: "task_queue",
-  payload: {
+// Producer - Add task to queue
+msg.payload = {
+  key: "task_queue",
+  value: {
     id: "task_001",
     type: "email",
     data: { to: "user@example.com", subject: "Welcome" }
   }
-}
+};
 
 // Consumer (using BLPOP)
+// Configure BLPOP operation in node settings
 // Automatically receives tasks as they're added
 ```
 
 ### Caching with Expiration
 ```javascript
 // Cache API response for 1 hour
-msg = {
-  topic: "api_cache:users",
-  payload: apiResponse
-}
-// Then set expiration
-msg = {
-  topic: "api_cache:users",
-  payload: 3600  // 1 hour
-}
+msg.payload = {
+  key: "api_cache:users",
+  value: apiResponse,
+  ttl: 3600  // 1 hour
+};
 ```
 
 ### Real-time Notifications
 ```javascript
 // Publisher
-msg = {
-  topic: "notifications:user:123",
-  payload: {
+msg.payload = {
+  channel: "notifications:user:123",
+  message: {
     type: "message",
     from: "user:456",
     content: "Hello there!"
   }
-}
+};
 
 // Subscriber automatically receives notifications
 ```
@@ -535,197 +571,168 @@ msg = {
 ### Basic Operations
 
 #### GET Operation
-```json
+```javascript
 // Simple format
-{
-  "payload": "user:123"
-}
+msg.payload = "user:123";
 
 // Object format
-{
-  "payload": {"key": "user:123"}
-}
+msg.payload = {
+    key: "user:123"
+};
 // Returns: "John Doe" (or stored value)
 ```
 
 #### SET Operation
-```json
+```javascript
 // Simple SET
-{
-  "payload": {
-    "key": "user:123",
-    "value": "John Doe"
-  }
-}
+msg.payload = {
+  key: "user:123",
+  value: "John Doe"
+};
 
 // SET with TTL (expires in 1 hour)
-{
-  "payload": {
-    "key": "session:abc123",
-    "value": {"userId": 42, "role": "admin"},
-    "ttl": 3600
-  }
-}
+msg.payload = {
+  key: "session:abc123",
+  value: {userId: 42, role: "admin"},
+  ttl: 3600
+};
 // Returns: { success: true, result: "OK", ttl: 3600 }
 ```
 
 #### DELETE Operations
-```json
+```javascript
 // Delete single key
-{
-  "payload": {"key": "temp:data"}
-}
+msg.payload = {
+    key: "temp:data"
+};
 
 // Delete multiple keys
-{
-  "payload": {"keys": ["cache:page1", "cache:page2", "temp:data"]}
-}
+msg.payload = {
+    keys: ["cache:page1", "cache:page2", "temp:data"]
+};
 // Returns: { success: true, deleted: 3, keys: [...] }
 ```
 
 ### TTL Operations
 
 #### Check TTL
-```json
-{
-  "payload": "session:abc123"
-}
+```javascript
+msg.payload = "session:abc123";
 // Returns: { key: "session:abc123", ttl: 2847, status: "expires in 2847 seconds" }
 ```
 
 #### Set Expiration
-```json
-{
-  "payload": {
-    "key": "temp:data",
-    "ttl": 1800
-  }
-}
+```javascript
+msg.payload = {
+  key: "temp:data",
+  ttl: 1800
+};
 // Returns: { success: true, key: "temp:data", ttl: 1800, message: "Expiration set" }
 ```
 
 #### Remove Expiration
-```json
-{
-  "payload": "permanent:key"
-}
+```javascript
+msg.payload = "permanent:key";
 // Returns: { success: true, key: "permanent:key", message: "Expiration removed" }
 ```
 
 ### Counter Operations
 
 #### Increment Counter
-```json
+```javascript
 // Simple increment
-{
-  "payload": "page:views"
-}
+msg.payload = "page:views";
 // Returns: { key: "page:views", value: 1547 }
 
 // Increment by amount
-{
-  "payload": {
-    "key": "score:player1",
-    "amount": 100
-  }
-}
+msg.payload = {
+  key: "score:player1",
+  amount: 100
+};
 // Returns: { key: "score:player1", value: 2350, increment: 100 }
 ```
 
 ### List Operations
 
 #### Add to List
-```json
-{
-  "payload": {
-    "key": "queue:tasks",
-    "value": {"task": "process_order", "id": 12345}
+```javascript
+msg.payload = {
+  key: "queue:tasks",
+  value: {
+      task: "process_order", 
+      id: 12345
   }
-}
+};
 // Returns: { success: true, key: "queue:tasks", length: 8, operation: "lpush" }
 ```
 
 #### Get List Range
-```json
-{
-  "payload": {
-    "key": "queue:tasks",
-    "start": 0,
-    "stop": 4
-  }
-}
+```javascript
+msg.payload = {
+  key: "queue:tasks",
+  start: 0,
+  stop: 4
+};
 // Returns: { key: "queue:tasks", range: {start: 0, stop: 4}, values: [...], count: 5 }
 ```
 
 #### Pop from List
-```json
-{
-  "payload": "queue:tasks"
-}
+```javascript
+msg.payload = "queue:tasks";
 // Returns: {"task": "process_order", "id": 12345} (first item)
 ```
 
 ### Hash Operations
 
 #### Set Hash Fields
-```json
+```javascript
 // Single field
-{
-  "payload": {
-    "key": "user:123",
-    "field": "email",
-    "value": "john.doe@example.com"
-  }
-}
+msg.payload = {
+  key: "user:123",
+  field: "email",
+  value: "john.doe@example.com"
+};
 // Returns: { success: true, key: "user:123", field: "email", created: true }
 
 // Multiple fields
-{
-  "payload": {
-    "key": "user:123",
-    "fields": {
-      "name": "John Doe",
-      "age": 30,
-      "city": "New York",
-      "active": true
-    }
+msg.payload = {
+  key: "user:123",
+  fields: {
+    name: "John Doe",
+    age: 30,
+    city: "New York",
+    active: true
   }
-}
+};
 // Returns: { success: true, key: "user:123", fields: ["name", "age", "city", "active"], created: 4 }
 ```
 
 #### Get Hash Data
-```json
+```javascript
 // Get single field
-{
-  "payload": {
-    "key": "user:123",
-    "field": "email"
-  }
-}
+msg.payload = {
+  key: "user:123",
+  field: "email"
+};
 // Returns: "john.doe@example.com"
 
 // Get all fields
-{
-  "payload": "user:123"
-}
+msg.payload = "user:123";
 // Returns: { name: "John Doe", age: "30", city: "New York", email: "john.doe@example.com", active: "true" }
 ```
 
 ### Pub/Sub Operations
 
 #### Publish Message
-```json
-{
-  "payload": {
-    "channel": "notifications",
-    "message": {
-      "type": "alert",
-      "text": "System maintenance in 5 minutes",
-      "timestamp": "2024-01-15T10:30:00Z"
-    }
+```javascript
+msg.payload = {
+  channel: "notifications",
+  message: {
+    type: "alert",
+    text: "System maintenance in 5 minutes",
+    timestamp: "2024-01-15T10:30:00Z"
   }
-}
+};
 // Returns: { success: true, channel: "notifications", subscribers: 3, message: "..." }
 ```
 
@@ -759,4 +766,4 @@ MIT License - see LICENSE file for details.
 - Complete Redis operations support
 - Flexible connection management
 - Modern ioredis integration
-- Comprehensive documentation 
+- Comprehensive documentation
