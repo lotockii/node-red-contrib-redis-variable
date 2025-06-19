@@ -26,6 +26,7 @@ A comprehensive Node-RED node for Redis operations with flexible connection mana
 - **SET** - Store value with optional TTL
 - **DEL** - Delete single or multiple keys
 - **EXISTS** - Check if single or multiple keys exist
+- **MATCH** - Find keys by pattern using SCAN
 
 #### **TTL Operations**
 - **TTL** - Get remaining time to live in seconds
@@ -159,6 +160,61 @@ Port: Global Context → redis_config.port
 Password: Flow Context → redis_password
 ```
 
+**Setting up Global Context Variables:**
+
+1. **In Node-RED Admin Panel:**
+   - Go to **Admin** → **Context** → **Global**
+   - Add variables:
+     - `redis_config.host` = `your-redis-host`
+     - `redis_config.port` = `6379`
+     - `redis_config.password` = `your-redis-password`
+
+2. **Via Function Node:**
+   ```javascript
+   // Set global context variables
+   flow.set("redis_config", {
+       host: "your-redis-host",
+       port: 6379,
+       password: "your-redis-password"
+   });
+   ```
+
+3. **Via HTTP API:**
+   ```bash
+   curl -X POST http://localhost:1880/context/global/redis_config \
+   -H "Content-Type: application/json" \
+   -d '{"host":"your-redis-host","port":6379,"password":"your-redis-password"}'
+   ```
+
+**Troubleshooting Global Context:**
+- Ensure variable names match exactly (case-sensitive)
+- Check Node-RED logs for context lookup messages
+- Verify global context variables are set before Redis operations
+
+**Testing Global Context Setup:**
+
+1. **Set up test variables:**
+   ```javascript
+   // In a Function node
+   flow.set("redis_config", {
+       host: "localhost",
+       port: 6379,
+       password: "your-password"
+   });
+   ```
+
+2. **Test connection:**
+   ```javascript
+   // In another Function node
+   msg.payload = "test_key";
+   return msg;
+   ```
+
+3. **Check logs:**
+   - Enable debug mode: `NODE_RED_DEBUG=1 node-red`
+   - Look for context lookup messages in Node-RED logs
+   - Verify connection parameters are correct
+
 ## Operations
 
 **Universal Payload Interface**: All Redis operations use a unified `msg.payload` interface. Parameters can be passed as simple strings (for single keys) or as objects with specific properties. This provides flexibility while maintaining simplicity.
@@ -228,6 +284,82 @@ msg.payload = {
     keys: ["key1", "key2", "key3"] 
 };
 // Returns: { payload: { exists: true, count: 2, keys: ["key1", "key2", "key3"] } }
+```
+
+#### MATCH - Find Keys by Pattern
+```javascript
+// Simple pattern
+msg.payload = "user:*";
+// Returns: { payload: { pattern: "user:*", keys: ["user:123", "user:456"], count: 2, scanned: true } }
+
+// Pattern with custom count
+msg.payload = {
+  pattern: "session:*",
+  count: 50
+};
+// Returns: { payload: { pattern: "session:*", keys: ["session:abc123", "session:def456"], count: 2, limit: 50, scanned: true } }
+
+// Pattern with pagination (cursor)
+msg.payload = {
+  pattern: "user:*",
+  count: 30,
+  cursor: "12345"
+};
+// Returns: { payload: { pattern: "user:*", keys: ["user:31", "user:32"], count: 2, limit: 30, cursor: "67890", startCursor: "12345", scanned: true, truncated: false } }
+
+// Pattern with skip (skip first N keys)
+msg.payload = {
+  pattern: "session:*",
+  count: 30,
+  skip: 100
+};
+// Returns: { payload: { pattern: "session:*", keys: ["session:101", "session:102"], count: 2, limit: 30, cursor: "67890", startCursor: 0, scanned: true, truncated: false } }
+
+// Complex patterns
+msg.payload = "cache:page:*";  // All cache pages
+msg.payload = "temp:*:data";   // Temporary data keys
+msg.payload = "user:*:profile"; // User profiles
+```
+
+**Advanced MATCH Features:**
+
+- **Pattern Matching**: Uses Redis SCAN with pattern matching for efficient key discovery
+- **Count Limit**: Limit the number of keys returned (default: 100)
+- **Cursor Pagination**: Use `cursor` parameter for efficient pagination through large datasets
+- **Skip Keys**: Use `skip` parameter to skip the first N matching keys
+- **Performance Optimized**: Uses Redis SCAN for non-blocking operation on large datasets
+
+**Response Format:**
+```javascript
+{
+  "pattern": "user:*",
+  "keys": ["user:1", "user:2", "user:3"],
+  "count": 3,                    // Number of keys returned
+  "limit": 50,                   // Requested limit
+  "cursor": "67890",             // Next cursor for pagination
+  "startCursor": "0",            // Starting cursor
+  "scanned": true,               // Operation completed
+  "truncated": false             // true if results were limited by count
+}
+```
+
+**Pagination Example:**
+```javascript
+// First request
+msg.payload = {
+  pattern: "session:*",
+  count: 30
+};
+
+// Response contains cursor for next page
+// Use that cursor in next request
+msg.payload = {
+  pattern: "session:*",
+  count: 30,
+  cursor: "67890"  // from previous response
+};
+
+// Continue until cursor becomes "0" (end of results)
 ```
 
 #### TTL - Get Time To Live
@@ -566,6 +698,24 @@ msg.payload = {
 // Subscriber automatically receives notifications
 ```
 
+### Key Discovery and Cleanup
+```javascript
+// Find all temporary keys
+msg.payload = "temp:*";
+// Returns: { pattern: "temp:*", keys: ["temp:cache1", "temp:cache2", "temp:session123"], count: 3, scanned: true }
+
+// Find expired session keys
+msg.payload = {
+  pattern: "session:*:expired",
+  count: 50
+};
+// Returns: { pattern: "session:*:expired", keys: ["session:abc:expired", "session:def:expired"], count: 2, scanned: true }
+
+// Clean up old cache entries
+msg.payload = "cache:old:*";
+// Use returned keys with DEL operation for cleanup
+```
+
 ## 📖 Usage Examples
 
 ### Basic Operations
@@ -611,6 +761,24 @@ msg.payload = {
     keys: ["cache:page1", "cache:page2", "temp:data"]
 };
 // Returns: { success: true, deleted: 3, keys: [...] }
+```
+
+#### MATCH Operations
+```javascript
+// Find all user keys
+msg.payload = "user:*";
+// Returns: { pattern: "user:*", keys: ["user:123", "user:456", "user:789"], count: 3, scanned: true }
+
+// Find session keys with custom scan count
+msg.payload = {
+  pattern: "session:*",
+  count: 25
+};
+// Returns: { pattern: "session:*", keys: ["session:abc123", "session:def456"], count: 2, scanned: true }
+
+// Find cache keys
+msg.payload = "cache:*";
+// Returns: { pattern: "cache:*", keys: ["cache:page1", "cache:page2", "cache:api"], count: 3, scanned: true }
 ```
 
 ### TTL Operations
@@ -738,18 +906,54 @@ msg.payload = {
 
 ## Troubleshooting
 
+### SSL/TLS Connection Issues
+
+If you encounter the error `"Protocol error, got "\u0015" as reply type byte"`, this indicates an SSL/TLS configuration problem:
+
+**Solution**: Disable certificate verification in the SSL/TLS configuration:
+1. Enable SSL/TLS in the configuration node
+2. **Uncheck** "Verify Certificate" (Reject unauthorized certificates)
+3. This allows connections to servers with self-signed or invalid certificates
+
+**Common scenarios where this is needed:**
+- Self-signed certificates in development environments
+- Local Redis servers with SSL enabled
+- Cloud Redis services with custom certificates
+- Test environments with temporary certificates
+
+**Security Note**: Disabling certificate verification reduces security. Only use this in trusted environments or when you're certain about the server's identity.
+
 ### Common Issues
 
 1. **Connection Refused**: Check Redis server is running and accessible
-2. **Authentication Failed**: Verify username/password configuration
+2. **Authentication Failed**: Verify username/password configuration  
 3. **Timeout Errors**: Increase connection timeout in advanced options
 4. **Memory Issues**: Monitor Redis memory usage and configure appropriate limits
 
 ### Debug Mode
+
 Enable Node-RED debug mode to see detailed connection and operation logs:
 ```bash
 DEBUG=redis* node-red
 ```
+
+**Context Debugging:**
+Enable context debugging by setting the environment variable:
+```bash
+NODE_RED_DEBUG=1 node-red
+```
+
+Check Node-RED logs for messages like:
+```
+Context lookup - Type: global, Path: redis_config.host, Result: your-redis-host
+Redis connection config - Host: your-redis-host, Port: 6379, Database: 0, Username: not set, Password: set
+```
+
+**Common Context Issues:**
+1. **Variable not found**: Check exact variable name spelling
+2. **Nested objects**: Use dot notation (e.g., `redis_config.host`)
+3. **Context type mismatch**: Ensure correct context type is selected
+4. **Timing issues**: Set context variables before Redis operations
 
 ## Contributing
 
@@ -761,9 +965,62 @@ MIT License - see LICENSE file for details.
 
 ## Changelog
 
+### v1.1.0
+- **Enhanced MATCH Operation**: Added advanced pattern matching with pagination support
+  - **Cursor Pagination**: Efficient pagination through large datasets using Redis SCAN cursors
+  - **Skip Functionality**: Skip first N matching keys for offset-based pagination
+  - **Count Limiting**: Improved count parameter handling for precise result limiting
+  - **Performance Optimization**: Better SCAN integration for non-blocking operations
+- **Improved Response Format**: Enhanced MATCH response with pagination metadata
+  - Added `cursor`, `startCursor`, `limit`, and `truncated` fields
+  - Better error handling and validation
+- **Production Ready**: Removed debug logging and optimized for production use
+- **Updated Documentation**: Comprehensive examples for all MATCH features
+- **Enhanced Error Handling**: Better validation and error messages
+
 ### v1.0.0
 - Initial release
 - Complete Redis operations support
 - Flexible connection management
 - Modern ioredis integration
 - Comprehensive documentation
+
+### Pattern Matching (MATCH)
+
+Find keys by pattern using Redis SCAN:
+
+```javascript
+// Find all keys starting with "user:"
+msg.payload = {
+    operation: "match",
+    pattern: "user:*"
+};
+
+// Find keys with specific pattern and custom scan count
+msg.payload = {
+    operation: "match", 
+    pattern: "session:*:active",
+    count: 50  // Number of keys to scan per iteration
+};
+
+// Simple pattern matching
+msg.payload = "temp:*";  // Find all keys starting with "temp:"
+```
+
+**Response format:**
+```javascript
+{
+    pattern: "user:*",
+    keys: ["user:1", "user:2", "user:admin"],
+    count: 3,
+    scanned: true
+}
+```
+
+**Pattern examples:**
+- `user:*` - All keys starting with "user:"
+- `*:active` - All keys ending with ":active"  
+- `session:*:data` - Keys with "session:" prefix and ":data" suffix
+- `temp_*` - Keys starting with "temp_"
+
+### Hash Operations

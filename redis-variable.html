@@ -33,6 +33,7 @@
                 <option value="set">SET - Set value</option>
                 <option value="del">DEL - Delete key</option>
                 <option value="exists">EXISTS - Check if key exists</option>
+                <option value="match">MATCH - Find keys by pattern</option>
             </optgroup>
             <optgroup label="TTL Operations">
                 <option value="ttl">TTL - Get time to live</option>
@@ -80,6 +81,7 @@
         <li><b>SET</b>: Store value with key (supports TTL)</li>
         <li><b>DEL</b>: Delete key(s)</li>
         <li><b>EXISTS</b>: Check if key(s) exist</li>
+        <li><b>MATCH</b>: Find keys by pattern using SCAN</li>
     </ul>
     
     <h4>TTL Operations</h4>
@@ -158,6 +160,37 @@
   "payload": {
     "keys": ["cache:page1", "cache:page2", "temp:data"]
   }
+}
+
+// MATCH - Find keys by pattern
+{
+  "payload": {
+    "pattern": "user:*",
+    "count": 100
+  }
+}
+
+// MATCH - With pagination (cursor)
+{
+  "payload": {
+    "pattern": "user:*",
+    "count": 50,
+    "cursor": "12345"
+  }
+}
+
+// MATCH - Skip first N keys
+{
+  "payload": {
+    "pattern": "session:*",
+    "count": 30,
+    "skip": 100
+  }
+}
+
+// MATCH - Simple pattern
+{
+  "payload": "session:*"
 }</pre>
     
     <h4>TTL Operations</h4>
@@ -280,5 +313,49 @@
         <li><b>INCR</b>: <code>{ key: "counter", value: 42 }</code></li>
         <li><b>LPUSH</b>: <code>{ success: true, key: "list", length: 5, operation: "lpush" }</code></li>
         <li><b>HGETALL</b>: <code>{ name: "John", age: 30, email: "john@example.com" }</code> (auto-parsed)</li>
+        <li><b>MATCH</b>: <code>{ pattern: "user:*", keys: ["user:1", "user:2"], count: 2, limit: 50, cursor: "12345", truncated: false }</code></li>
     </ul>
+    
+    <h4>MATCH Operation Details</h4>
+    <p>The MATCH operation supports advanced features for efficient key discovery:</p>
+    <ul>
+        <li><b>Pattern matching</b>: Uses Redis SCAN with pattern matching (e.g., <code>user:*</code>, <code>session:ci_session:*</code>)</li>
+        <li><b>Count limit</b>: Limit the number of keys returned (default: 100)</li>
+        <li><b>Cursor pagination</b>: Use <code>cursor</code> parameter for efficient pagination through large datasets</li>
+        <li><b>Skip keys</b>: Use <code>skip</code> parameter to skip the first N matching keys</li>
+        <li><b>Performance optimized</b>: Uses Redis SCAN for non-blocking operation on large datasets</li>
+    </ul>
+    
+    <p><b>Response format:</b></p>
+    <pre>{
+  "pattern": "user:*",
+  "keys": ["user:1", "user:2", "user:3"],
+  "count": 3,
+  "limit": 50,
+  "cursor": "67890",        // Next cursor for pagination
+  "startCursor": "0",       // Starting cursor
+  "scanned": true,
+  "truncated": false        // true if results were limited by count
+}</pre>
+    
+    <p><b>Pagination example:</b></p>
+    <pre>// First request
+{
+  "payload": {
+    "pattern": "session:*",
+    "count": 30
+  }
+}
+
+// Response contains cursor for next page
+// Use that cursor in next request
+{
+  "payload": {
+    "pattern": "session:*",
+    "count": 30,
+    "cursor": "67890"  // from previous response
+  }
+}
+
+// Continue until cursor becomes "0" (end of results)</pre>
 </script> 

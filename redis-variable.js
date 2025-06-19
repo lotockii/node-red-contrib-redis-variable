@@ -16,6 +16,8 @@ module.exports = function (RED) {
         this.location = config.location || 'flow';
         this.sha1 = "";
 
+        // Save redisConfig once in the constructor
+        let redisConfig = RED.nodes.getNode(config.redisConfig);
         let client = null;
         let running = true;
 
@@ -47,49 +49,6 @@ module.exports = function (RED) {
                 }
             }
             return str;
-        }
-
-        // Try to get Redis configuration, but don't fail if not found
-        const redisConfig = RED.nodes.getNode(config.redisConfig);
-        
-        if (!redisConfig) {
-            node.warn("Redis configuration not found. Node will be in standby mode.");
-            node.status({
-                fill: "yellow",
-                shape: "dot",
-                text: "no config"
-            });
-            
-            // Still handle input, but just pass through with warning
-            node.on('input', function(msg) {
-                msg.payload = { error: "Redis configuration not found" };
-                node.send(msg);
-            });
-            return;
-        }
-
-        // Initialize Redis client only if config is available
-        try {
-            const nodeId = this.block ? node.id : redisConfig.id;
-            client = redisConfig.getClient({}, node, nodeId);
-            
-            if (!client) {
-                throw new Error("Failed to initialize Redis client");
-            }
-        } catch (error) {
-            node.error(`Failed to initialize Redis client: ${error.message}`);
-            node.status({
-                fill: "red",
-                shape: "dot",
-                text: "connection error"
-            });
-            
-            // Handle input with error
-            node.on('input', function(msg) {
-                msg.payload = { error: error.message };
-                node.send(msg);
-            });
-            return;
         }
 
         // Handle different operations
@@ -303,6 +262,35 @@ module.exports = function (RED) {
                 send = send || function() { node.send.apply(node, arguments) };
                 done = done || function(err) { if(err) node.error(err, msg); };
 
+                if (!running) {
+                    running = true;
+                }
+
+                // Use redisConfig saved at construction
+                if (!redisConfig) {
+                    node.error("Redis configuration not found", msg);
+                    msg.payload = { error: "Redis configuration not found" };
+                    send(msg);
+                    done();
+                    return;
+                }
+
+                // Only create client if not already created
+                try {
+                    if (!client) {
+                        client = redisConfig.getClient(msg, node, node.id);
+                        if (!client) {
+                            throw new Error("Failed to initialize Redis client");
+                        }
+                    }
+                } catch (err) {
+                    node.error(err.message, msg);
+                    msg.payload = { error: err.message };
+                    send(msg);
+                    done();
+                    return;
+                }
+
                 try {
                     let response;
                     let payload = msg.payload;
@@ -359,6 +347,71 @@ module.exports = function (RED) {
                             let keysToCheck = Array.isArray(existsKeys) ? existsKeys : [existsKeys];
                             response = await client.exists(...keysToCheck);
                             msg.payload = { exists: response > 0, count: response, keys: keysToCheck };
+                            break;
+
+                        case "match":
+                            let pattern = payload.pattern || payload;
+                            if (!pattern || typeof pattern !== 'string') {
+                                throw new Error("Missing pattern for MATCH operation. Use payload.pattern or payload as string");
+                            }
+                            
+                            let count = payload.count || 100; // Default scan count
+                            let startCursor = payload.cursor || payload.skip || 0; // Support cursor/skip for pagination
+                            let allKeys = [];
+                            let cursor = startCursor;
+                            let maxIterations = 1000; // Prevent infinite loops
+                            let iterations = 0;
+                            
+                            // If skip is specified, we need to scan through keys without collecting them
+                            if (payload.skip && payload.skip > 0) {
+                                let skipped = 0;
+                                do {
+                                    if (iterations++ > maxIterations) {
+                                        throw new Error("Maximum scan iterations exceeded. Check your pattern or reduce skip value.");
+                                    }
+                                    const scanResult = await client.scan(cursor, 'MATCH', pattern, 'COUNT', count);
+                                    cursor = scanResult[0];
+                                    skipped += scanResult[1].length;
+                                    
+                                    if (skipped >= payload.skip) {
+                                        // We've skipped enough, start collecting from this point
+                                        const excessSkipped = skipped - payload.skip;
+                                        if (excessSkipped > 0) {
+                                            // Add keys from current batch, excluding the excess
+                                            allKeys = scanResult[1].slice(excessSkipped);
+                                        }
+                                        break;
+                                    }
+                                } while (cursor !== 0 && cursor !== '0');
+                            }
+                            
+                            // Continue scanning to collect keys up to the limit
+                            do {
+                                if (iterations++ > maxIterations) {
+                                    throw new Error("Maximum scan iterations exceeded. Check your pattern or reduce count value.");
+                                }
+                                const scanResult = await client.scan(cursor, 'MATCH', pattern, 'COUNT', count);
+                                cursor = scanResult[0];
+                                allKeys = allKeys.concat(scanResult[1]);
+                                
+                                // Break early if we've found enough keys
+                                if (allKeys.length >= count) {
+                                    allKeys = allKeys.slice(0, count); // Trim to exact count
+                                    break;
+                                }
+                            } while (cursor !== 0 && cursor !== '0');
+                            
+                            msg.payload = { 
+                                pattern: pattern,
+                                keys: allKeys,
+                                count: allKeys.length,
+                                limit: count,
+                                cursor: cursor, // Return next cursor for pagination
+                                startCursor: startCursor,
+                                scanned: true,
+                                truncated: allKeys.length === count,
+                                iterations: iterations
+                            };
                             break;
 
                         // TTL Operations

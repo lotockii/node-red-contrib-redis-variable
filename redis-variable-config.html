@@ -28,7 +28,8 @@
       tlsCaContext: { value: "" },
       options: { value: "{}" },
       optionsType: { value: "json" },
-      optionsContext: { value: "" }
+      optionsContext: { value: "" },
+      debugNoSSL: { value: false }
     },
     credentials: {
       password: { type: "password" },
@@ -290,6 +291,18 @@
       $("#node-config-input-tlsCa-visible").on("input", function() {
         $("#node-config-input-tlsCa").val($(this).val());
       });
+
+      // Debug option
+      $("#node-config-input-debugNoSSL").prop('checked', this.debugNoSSL === true);
+      
+      // Show/hide TLS options based on debug setting
+      $("#node-config-input-debugNoSSL").change(function() {
+        if ($(this).is(':checked')) {
+          $("#ssl-config-section").hide();
+        } else {
+          $("#ssl-config-section").show();
+        }
+      });
     },
     oneditsave: function() {
       // Save basic configuration
@@ -431,6 +444,9 @@
         this.tlsCaContext = tlsCaValue || '';
         $("#node-config-input-tlsCa").val('');
       }
+
+      // Debug option
+      this.debugNoSSL = $("#node-config-input-debugNoSSL").is(':checked');
     }
   });
 </script>

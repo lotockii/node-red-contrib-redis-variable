@@ -1,14 +1,17 @@
 {
   "name": "node-red-contrib-redis-variable",
-  "version": "1.0.0",
-  "description": "A comprehensive Node-RED node for Redis operations with universal payload-based configuration, automatic JSON handling, and SSL/TLS support",
+  "version": "1.2.0",
+  "description": "A comprehensive Node-RED node for Redis operations with universal payload-based configuration, automatic JSON handling, SSL/TLS support, and advanced pattern matching with pagination",
   "keywords": [
     "node-red",
     "redis",
     "database",
     "cache",
     "variable",
-    "storage"
+    "storage",
+    "pattern-matching",
+    "pagination",
+    "json-handling"
   ],
   "homepage": "https://github.com/lotockii/node-red-contrib-redis-variable#readme",
   "bugs": {

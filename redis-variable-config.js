@@ -4,14 +4,6 @@ module.exports = function (RED) {
     let connections = {};
     let usedConn = {};
 
-    /**
-     * Helper function to get value from different contexts
-     * @param {Object} node - Node instance
-     * @param {string} value - Value to get
-     * @param {string} type - Type of value (str, flow, global, env)
-     * @param {Object} msg - Message object
-     * @returns {string} Retrieved value
-     */
     function getValueFromContext(node, value, type, msg) {
         if (value === null || value === undefined) return null;
 
@@ -55,14 +47,21 @@ module.exports = function (RED) {
         if (path.includes('.')) {
             const parts = path.split('.');
             let result = context.get(parts[0]);
-            for (let i = 1; i < parts.length; i++) {
-                if (result && typeof result === 'object') {
-                    result = result[parts[i]];
-                } else {
-                    return undefined;
+            
+            // If the first part returns an object, traverse it
+            if (result && typeof result === 'object') {
+                for (let i = 1; i < parts.length; i++) {
+                    if (result && typeof result === 'object' && result[parts[i]] !== undefined) {
+                        result = result[parts[i]];
+                    } else {
+                        return undefined;
+                    }
                 }
+                return result;
+            } else {
+                // If first part is not an object, try to get the full path as a single value
+                return context.get(path);
             }
-            return result;
         } else {
             return context.get(path);
         }
@@ -129,6 +128,9 @@ module.exports = function (RED) {
                         break;
                     case 'global':
                         result = getValueFromContext(executingNode || this, value, 'global', msg);
+                        if (executingNode && process.env.NODE_RED_DEBUG) {
+                            executingNode.log(`Context lookup - Type: global, Path: ${value}, Result: ${result}`);
+                        }
                         break;
                     case 'env':
                         result = process.env[value] || null;
@@ -158,29 +160,29 @@ module.exports = function (RED) {
         // Get Redis connection options
         this.getConnectionOptions = function(msg, executingNode) {
             try {
-                // Parse host
-                let host = this.parseCredentialValue(
-                    this.hostType === 'str' ? this.host : this.hostContext, 
-                    this.hostType, 
-                    msg, 
-                    executingNode
-                ) || 'localhost';
+                // Parse host - handle both typedInput and direct context
+                let host;
+                if (this.hostType === 'str') {
+                    host = this.host || 'localhost';
+                } else {
+                    host = this.parseCredentialValue(this.hostContext, this.hostType, msg, executingNode) || 'localhost';
+                }
 
-                // Parse port
-                let port = this.parseCredentialValue(
-                    this.portType === 'str' ? this.port : this.portContext,
-                    this.portType,
-                    msg,
-                    executingNode
-                ) || 6379;
+                // Parse port - handle both typedInput and direct context
+                let port;
+                if (this.portType === 'str') {
+                    port = this.port || 6379;
+                } else {
+                    port = this.parseCredentialValue(this.portContext, this.portType, msg, executingNode) || 6379;
+                }
 
-                // Parse database
-                let database = this.parseCredentialValue(
-                    this.databaseType === 'str' ? this.database : this.databaseContext,
-                    this.databaseType,
-                    msg,
-                    executingNode
-                ) || 0;
+                // Parse database - handle both typedInput and direct context
+                let database;
+                if (this.databaseType === 'str') {
+                    database = this.database || 0;
+                } else {
+                    database = this.parseCredentialValue(this.databaseContext, this.databaseType, msg, executingNode) || 0;
+                }
 
                 // Parse password
                 let password = null;
@@ -273,6 +275,9 @@ module.exports = function (RED) {
                     if (!this.tlsRejectUnauthorized) {
                         connectionOptions.tls.rejectUnauthorized = false;
                     }
+                } else {
+                    // Explicitly disable TLS for non-SSL connections
+                    connectionOptions.tls = false;
                 }
 
                 return connectionOptions;
@@ -310,10 +315,21 @@ module.exports = function (RED) {
 
                 // Handle connection errors
                 client.on("error", (e) => {
+                    let errorMsg = `Redis connection error: ${e.message}`;
+                    
+                    // Add specific diagnostics for common SSL issues
+                    if (e.message.includes("Protocol error") || e.message.includes("\\u0015")) {
+                        errorMsg += "\nThis usually indicates an SSL/TLS configuration issue. Try:";
+                        errorMsg += "\n1. Disable SSL/TLS if your Redis server doesn't support it";
+                        errorMsg += "\n2. Use port 6380 for Redis SSL instead of 6379";
+                        errorMsg += "\n3. Check if your Redis server is configured for SSL";
+                        errorMsg += "\n4. Enable 'Debug: Force No SSL' option for testing";
+                    }
+                    
                     if (executingNode) {
-                        executingNode.error(`Redis connection error: ${e.message}`, {});
+                        executingNode.error(errorMsg, {});
                     } else {
-                        this.error(`Redis connection error: ${e.message}`, {});
+                        this.error(errorMsg, {});
                     }
                 });
 
