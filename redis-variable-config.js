@@ -303,33 +303,76 @@ module.exports = function (RED) {
 
                 const options = this.getConnectionOptions(msg, executingNode);
 
+                // Add connection limits to prevent infinite retry loops
+                const connectionOptions = {
+                    ...options,
+                    maxRetriesPerRequest: 1, // Limit retries per request
+                    retryDelayOnFailover: 100,
+                    enableReadyCheck: false,
+                    lazyConnect: true, // Don't connect immediately
+                    connectTimeout: 5000, // 5 second timeout
+                    commandTimeout: 3000, // 3 second command timeout
+                    // Disable automatic reconnection to prevent error loops
+                    retryDelayOnClusterDown: 0,
+                    retryDelayOnFailover: 0,
+                    maxRetriesPerRequest: 0
+                };
+
                 // Create Redis client
                 let client;
                 if (this.cluster) {
                     // For cluster mode, options should be an array of nodes
-                    const clusterNodes = Array.isArray(options) ? options : [options];
+                    const clusterNodes = Array.isArray(connectionOptions) ? connectionOptions : [connectionOptions];
                     client = new Redis.Cluster(clusterNodes);
                 } else {
-                    client = new Redis(options);
+                    client = new Redis(connectionOptions);
                 }
+
+                // Track error state to prevent spam
+                let errorReported = false;
+                let lastErrorTime = 0;
+                const ERROR_REPORT_INTERVAL = 30000; // Report errors only once per 30 seconds
 
                 // Handle connection errors
                 client.on("error", (e) => {
-                    let errorMsg = `Redis connection error: ${e.message}`;
+                    const now = Date.now();
                     
-                    // Add specific diagnostics for common SSL issues
-                    if (e.message.includes("Protocol error") || e.message.includes("\\u0015")) {
-                        errorMsg += "\nThis usually indicates an SSL/TLS configuration issue. Try:";
-                        errorMsg += "\n1. Disable SSL/TLS if your Redis server doesn't support it";
-                        errorMsg += "\n2. Use port 6380 for Redis SSL instead of 6379";
-                        errorMsg += "\n3. Check if your Redis server is configured for SSL";
-                        errorMsg += "\n4. Enable 'Debug: Force No SSL' option for testing";
+                    // Only report errors once per interval to prevent spam
+                    if (!errorReported || (now - lastErrorTime) > ERROR_REPORT_INTERVAL) {
+                        let errorMsg = `Redis connection error: ${e.message}`;
+                        
+                        // Add specific diagnostics for common SSL issues
+                        if (e.message.includes("Protocol error") || e.message.includes("\\u0015")) {
+                            errorMsg += "\nThis usually indicates an SSL/TLS configuration issue. Try:";
+                            errorMsg += "\n1. Disable SSL/TLS if your Redis server doesn't support it";
+                            errorMsg += "\n2. Use port 6380 for Redis SSL instead of 6379";
+                            errorMsg += "\n3. Check if your Redis server is configured for SSL";
+                            errorMsg += "\n4. Enable 'Debug: Force No SSL' option for testing";
+                        }
+                        
+                        if (executingNode) {
+                            executingNode.error(errorMsg, {});
+                        } else {
+                            this.error(errorMsg, {});
+                        }
+                        
+                        errorReported = true;
+                        lastErrorTime = now;
                     }
-                    
+                });
+
+                // Handle successful connection
+                client.on("connect", () => {
+                    errorReported = false;
                     if (executingNode) {
-                        executingNode.error(errorMsg, {});
-                    } else {
-                        this.error(errorMsg, {});
+                        executingNode.status({ fill: "green", shape: "dot", text: "connected" });
+                    }
+                });
+
+                // Handle disconnection
+                client.on("disconnect", () => {
+                    if (executingNode) {
+                        executingNode.status({ fill: "red", shape: "ring", text: "disconnected" });
                     }
                 });
 
@@ -359,6 +402,20 @@ module.exports = function (RED) {
             }
             if (connections[id] && usedConn[id] <= 0) {
                 connections[id].disconnect();
+                delete connections[id];
+                delete usedConn[id];
+            }
+        };
+
+        // Force disconnect method for error recovery
+        this.forceDisconnect = function(nodeId) {
+            const id = nodeId || this.id;
+            if (connections[id]) {
+                try {
+                    connections[id].disconnect();
+                } catch (e) {
+                    // Ignore disconnect errors
+                }
                 delete connections[id];
                 delete usedConn[id];
             }
