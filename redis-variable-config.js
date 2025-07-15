@@ -157,6 +157,51 @@ module.exports = function (RED) {
             }
         };
 
+        // Check if configuration exists in context
+        this.hasValidConfiguration = function(msg, executingNode) {
+            try {
+                // If using string configuration for host and port, it's always valid
+                if (this.hostType === 'str' && this.portType === 'str') {
+                    return true;
+                }
+                
+                // For context-based configuration, check if the required values exist
+                let hasHost = false;
+                let hasPort = false;
+                
+                // Check host configuration
+                if (this.hostType === 'str') {
+                    hasHost = !!(this.host);
+                } else {
+                    const contextHost = this.parseCredentialValue(this.hostContext, this.hostType, msg, executingNode);
+                    hasHost = !!(contextHost);
+                }
+                
+                // Check port configuration
+                if (this.portType === 'str') {
+                    hasPort = !!(this.port);
+                } else {
+                    const contextPort = this.parseCredentialValue(this.portContext, this.portType, msg, executingNode);
+                    hasPort = !!(contextPort);
+                }
+                
+                // We need at least host and port to have a valid configuration
+                const result = hasHost && hasPort;
+                
+                if (executingNode && process.env.NODE_RED_DEBUG) {
+                    executingNode.log(`Configuration check - hasHost: ${hasHost}, hasPort: ${hasPort}, result: ${result}`);
+                }
+                
+                return result;
+                
+            } catch (error) {
+                if (executingNode) {
+                    executingNode.error(`Error checking configuration: ${error.message}`);
+                }
+                return false;
+            }
+        };
+
         // Get Redis connection options
         this.getConnectionOptions = function(msg, executingNode) {
             try {
@@ -299,6 +344,25 @@ module.exports = function (RED) {
                 if (connections[id]) {
                     usedConn[id]++;
                     return connections[id];
+                }
+
+                // Check if configuration is available before attempting connection
+                if (!this.hasValidConfiguration(msg, executingNode)) {
+                    if (executingNode) {
+                        // Only warn once per node to avoid spam
+                        if (!executingNode._configWarningShown) {
+                            executingNode.warn("Redis configuration not available in context. Skipping connection attempt.");
+                            executingNode._configWarningShown = true;
+                            
+                            // Reset warning flag after 30 seconds
+                            setTimeout(() => {
+                                if (executingNode) {
+                                    executingNode._configWarningShown = false;
+                                }
+                            }, 30000);
+                        }
+                    }
+                    return null;
                 }
 
                 const options = this.getConnectionOptions(msg, executingNode);

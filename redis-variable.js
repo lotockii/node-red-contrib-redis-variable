@@ -280,7 +280,12 @@ module.exports = function (RED) {
                     if (!client) {
                         client = redisConfig.getClient(msg, node, node.id);
                         if (!client) {
-                            throw new Error("Failed to initialize Redis client");
+                            node.warn("Redis configuration not available. Operation skipped.");
+                            node.status({ fill: "yellow", shape: "ring", text: "no config" });
+                            msg.payload = { error: "Redis configuration not available" };
+                            send(msg);
+                            done();
+                            return;
                         }
                     }
                     
@@ -296,7 +301,12 @@ module.exports = function (RED) {
                                 client = null;
                                 client = redisConfig.getClient(msg, node, node.id);
                                 if (!client) {
-                                    throw new Error("Failed to recreate Redis client");
+                                    node.warn("Redis configuration not available during reconnection. Operation skipped.");
+                                    node.status({ fill: "yellow", shape: "ring", text: "no config" });
+                                    msg.payload = { error: "Redis configuration not available" };
+                                    send(msg);
+                                    done();
+                                    return;
                                 }
                             } catch (reconnectError) {
                                 throw new Error(`Failed to reconnect: ${reconnectError.message}`);
