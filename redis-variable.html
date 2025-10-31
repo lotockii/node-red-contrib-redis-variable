@@ -5,7 +5,8 @@
         defaults: {
             name: { value: "" },
             redisConfig: { value: "", type: "redis-variable-config" },
-            operation: { value: "get" }
+            operation: { value: "get" },
+            topic: { value: "" }
         },
         inputs: 1,
         outputs: 1,
@@ -62,8 +63,14 @@
             </optgroup>
             <optgroup label="Pub/Sub Operations">
                 <option value="publish">PUBLISH - Publish message</option>
+                <option value="subscribe">SUBSCRIBE - Subscribe to channel</option>
+                <option value="psubscribe">PSUBSCRIBE - Pattern subscribe</option>
             </optgroup>
         </select>
+    </div>
+    <div class="form-row">
+        <label for="node-input-topic"><i class="fa fa-hashtag"></i> Channel/Pattern</label>
+        <input type="text" id="node-input-topic" placeholder="notifications or news.*">
     </div>
 </script>
 

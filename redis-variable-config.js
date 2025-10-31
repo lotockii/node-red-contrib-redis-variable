@@ -383,13 +383,57 @@ module.exports = function (RED) {
                 };
 
                 // Create Redis client
+                // Create Redis client
                 let client;
                 if (this.cluster) {
-                    // For cluster mode, options should be an array of nodes
-                    const clusterNodes = Array.isArray(connectionOptions) ? connectionOptions : [connectionOptions];
-                    client = new Redis.Cluster(clusterNodes);
+                    // Prepare cluster node(s)
+                    const host = options.host;
+                    const port = parseInt(options.port);
+
+                    // AWS ElastiCache cluster connection (TLS-safe)
+                    const clusterNodes = [{ host, port }];
+
+                    const clusterOptions = {
+                        scaleReads: "slave",
+                        enableReadyCheck: false,
+                        slotsRefreshTimeout: 5000,
+                        redisOptions: {
+                            username: options.username || undefined,
+                            password: options.password || undefined,
+                            db: options.db || 0,
+                            connectTimeout: 5000,
+                            maxRetriesPerRequest: 3,
+                            retryStrategy: (times) => Math.min(times * 200, 2000),
+                            tls: this.enableTLS
+                                ? {
+                                    servername: host,
+                                    rejectUnauthorized: this.tlsRejectUnauthorized,
+                                    ca: this.credentials?.tlsCa || undefined,
+                                    cert: this.credentials?.tlsCert || undefined,
+                                    key: this.credentials?.tlsKey || undefined,
+                                }
+                                : undefined,
+                        },
+                    };
+
+                    client = new Redis.Cluster(clusterNodes, clusterOptions);
                 } else {
-                    client = new Redis(connectionOptions);
+                    // Non-cluster (single node)
+                    client = new Redis({
+                        ...options,
+                        enableReadyCheck: false,
+                        connectTimeout: 5000,
+                        maxRetriesPerRequest: 3,
+                        tls: this.enableTLS
+                            ? {
+                                servername: options.host,
+                                rejectUnauthorized: this.tlsRejectUnauthorized,
+                                ca: this.credentials?.tlsCa || undefined,
+                                cert: this.credentials?.tlsCert || undefined,
+                                key: this.credentials?.tlsKey || undefined,
+                            }
+                            : undefined,
+                    });
                 }
 
                 // Track error state to prevent spam

@@ -14,6 +14,7 @@ module.exports = function (RED) {
         this.stored = config.stored || false;
         this.params = config.params;
         this.location = config.location || 'flow';
+        this.topic = config.topic || "";
         this.sha1 = "";
 
         // Save redisConfig once in the constructor
@@ -75,56 +76,89 @@ module.exports = function (RED) {
         // Subscription operations (subscribe, psubscribe)
         function handleSubscription() {
             try {
-                if (node.operation === "psubscribe") {
-                    client.on("pmessage", function (pattern, channel, message) {
-                        var payload = smartParse(message);
-                        node.send({
-                            pattern: pattern,
-                            topic: channel,
-                            payload: payload,
-                        });
-                    });
-                    client[node.operation](node.topic, (err, count) => {
-                        if (err) {
-                            node.error(err.message);
-                            node.status({
-                                fill: "red",
-                                shape: "dot",
-                                text: "error",
-                            });
-                        } else {
-                            node.status({
-                                fill: "green",
-                                shape: "dot",
-                                text: "connected",
-                            });
-                        }
-                    });
-                } else if (node.operation === "subscribe") {
-                    client.on("message", function (channel, message) {
-                        var payload = smartParse(message);
-                        node.send({
-                            topic: channel,
-                            payload: payload,
-                        });
-                    });
-                    client[node.operation](node.topic, (err, count) => {
-                        if (err) {
-                            node.error(err.message);
-                            node.status({
-                                fill: "red",
-                                shape: "dot",
-                                text: "error",
-                            });
-                        } else {
-                            node.status({
-                                fill: "green",
-                                shape: "dot",
-                                text: "connected",
-                            });
-                        }
-                    });
+                if (!redisConfig) {
+                    node.status({ fill: "yellow", shape: "ring", text: "no config" });
+                    node.warn("Redis configuration not found for subscription.");
+                    return;
                 }
+
+                if (!node.topic) {
+                    node.status({ fill: "red", shape: "dot", text: "missing channel" });
+                    node.error("Missing channel/pattern for subscription (topic)");
+                    return;
+                }
+
+                client = redisConfig.getClient(null, node, node.id);
+                if (!client) {
+                    node.status({ fill: "yellow", shape: "ring", text: "no config" });
+                    node.warn("Redis configuration not available. Subscription skipped.");
+                    return;
+                }
+
+                const setup = async () => {
+                    try {
+                        if (client.status !== 'ready' && client.status !== 'connect') {
+                            await client.connect();
+                        }
+
+                        const topics = (node.topic || "").split(/[\s,]+/).filter(Boolean);
+
+                        if (node.operation === "psubscribe") {
+                            client.on("pmessage", function (pattern, channel, message) {
+                                var payload = smartParse(message);
+                                node.send({
+                                    pattern: pattern,
+                                    topic: channel,
+                                    payload: payload,
+                                });
+                            });
+                            client.psubscribe(...topics, (err) => {
+                                if (err) {
+                                    // Fallback: if server doesn't support PSUBSCRIBE and no wildcard is used, try SUBSCRIBE
+                                    if (err.message && err.message.toLowerCase().includes('unknown command')) {
+                                        const hasWildcard = topics.some(t => t.includes('*'));
+                                        if (!hasWildcard) {
+                                            client.subscribe(...topics, (subErr) => {
+                                                if (subErr) {
+                                                    node.error(subErr.message);
+                                                    node.status({ fill: "red", shape: "dot", text: "error" });
+                                                } else {
+                                                    node.status({ fill: "green", shape: "dot", text: "connected" });
+                                                }
+                                            });
+                                            return;
+                                        }
+                                    }
+                                    node.error(err.message);
+                                    node.status({ fill: "red", shape: "dot", text: "error" });
+                                } else {
+                                    node.status({ fill: "green", shape: "dot", text: "connected" });
+                                }
+                            });
+                        } else if (node.operation === "subscribe") {
+                            client.on("message", function (channel, message) {
+                                var payload = smartParse(message);
+                                node.send({
+                                    topic: channel,
+                                    payload: payload,
+                                });
+                            });
+                            client.subscribe(...topics, (err) => {
+                                if (err) {
+                                    node.error(err.message);
+                                    node.status({ fill: "red", shape: "dot", text: "error" });
+                                } else {
+                                    node.status({ fill: "green", shape: "dot", text: "connected" });
+                                }
+                            });
+                        }
+                    } catch (e) {
+                        node.error(`Subscription setup failed: ${e.message}`);
+                        node.status({ fill: "red", shape: "dot", text: "error" });
+                    }
+                };
+
+                setup();
             } catch (error) {
                 node.error(`Subscription error: ${error.message}`);
                 node.status({
@@ -738,6 +772,18 @@ module.exports = function (RED) {
                 }
             }
             
+            if (client) {
+                try {
+                    if (node.operation === 'subscribe' && node.topic) {
+                        await client.unsubscribe(node.topic);
+                    } else if (node.operation === 'psubscribe' && node.topic) {
+                        await client.punsubscribe(node.topic);
+                    }
+                } catch (e) {
+                    // ignore
+                }
+            }
+
             if (redisConfig) {
                 const nodeId = node.block ? node.id : redisConfig.id;
                 redisConfig.disconnect(nodeId);
