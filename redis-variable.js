@@ -309,6 +309,21 @@ module.exports = function (RED) {
                 send = send || function() { node.send.apply(node, arguments) };
                 done = done || function(err) { if(err) node.error(err, msg); };
 
+                // Ensure we only send and call done once per message
+                let completed = false;
+                const finish = (err) => {
+                    if (completed) return;
+                    completed = true;
+                    if (err) node.error(err.message || err, msg);
+                    done(err);
+                };
+                const sendAndDone = (m) => {
+                    if (completed) return;
+                    completed = true;
+                    send(m);
+                    done();
+                };
+
                 if (!running) {
                     running = true;
                 }
@@ -317,8 +332,7 @@ module.exports = function (RED) {
                 if (!redisConfig) {
                     node.error("Redis configuration not found", msg);
                     msg.payload = { error: "Redis configuration not found" };
-                    send(msg);
-                    done();
+                    sendAndDone(msg);
                     return;
                 }
 
@@ -337,8 +351,7 @@ module.exports = function (RED) {
                 } catch (configError) {
                     node.error(configError.message, msg);
                     msg.payload = { error: configError.message };
-                    send(msg);
-                    done();
+                    sendAndDone(msg);
                     return;
                 }
 
@@ -350,43 +363,50 @@ module.exports = function (RED) {
                             node.warn("Redis configuration not available. Operation skipped.");
                             node.status({ fill: "yellow", shape: "ring", text: "no config" });
                             msg.payload = { error: "Redis configuration not available" };
-                            send(msg);
-                            done();
+                            sendAndDone(msg);
                             return;
                         }
                     }
 
-                    // Check if client is connected before proceeding
+                    // Ensure client is connected before running commands
                     if (client.status !== 'ready' && client.status !== 'connect') {
-                        // Try to connect if not connected
-                        if (client.status === 'wait') {
-                            await client.connect();
-                        } else if (client.status === 'disconnect' || client.status === 'end') {
-                            await client.connect();
-                        } else {
-                            // Force disconnect and recreate client for other error states
-                            try {
+                        const CONNECT_WAIT_MS = 15000;
+                        const waitForReady = () => new Promise((resolve, reject) => {
+                            const timeout = setTimeout(() => reject(new Error('Connection timeout')), CONNECT_WAIT_MS);
+                            const onReady = () => { clearTimeout(timeout); cleanup(); resolve(); };
+                            const onError = (e) => { clearTimeout(timeout); cleanup(); reject(e); };
+                            const cleanup = () => {
+                                client.removeListener('ready', onReady);
+                                client.removeListener('connect', onReady);
+                                client.removeListener('error', onError);
+                            };
+                            client.once('ready', onReady);
+                            client.once('connect', onReady);
+                            client.once('error', onError);
+                        });
+                        try {
+                            if (client.status === 'connecting') {
+                                // Already connecting: wait for ready, do not call connect() again
+                                await waitForReady();
+                            } else if (typeof client.connect === 'function') {
+                                await client.connect();
+                            }
+                        } catch (connectErr) {
+                            const msg = connectErr.message || String(connectErr);
+                            if (msg.includes('already connecting') || msg.includes('already connected')) {
+                                // Race: another message triggered connect; wait for ready
+                                await waitForReady();
+                            } else {
                                 redisConfig.forceDisconnect(node.id);
                                 client = null;
-                                client = redisConfig.getClient(msg, node, node.id);
-                                if (!client) {
-                                    node.warn("Redis configuration not available during reconnection. Operation skipped.");
-                                    node.status({ fill: "yellow", shape: "ring", text: "no config" });
-                                    msg.payload = { error: "Redis configuration not available" };
-                                    send(msg);
-                                    done();
-                                    return;
-                                }
-                            } catch (reconnectError) {
-                                throw new Error(`Failed to reconnect: ${reconnectError.message}`);
+                                throw new Error(`Failed to connect: ${msg}`);
                             }
                         }
                     }
                 } catch (err) {
                     node.error(err.message, msg);
                     msg.payload = { error: err.message };
-                    send(msg);
-                    done();
+                    sendAndDone(msg);
                     return;
                 }
 
@@ -770,22 +790,19 @@ module.exports = function (RED) {
                                 retryable: false
                             };
                         }
-                        send(msg);
-                        done();
+                        sendAndDone(msg);
                         return;
                     }
 
                     // Update node status on success
                     node.status({ fill: "green", shape: "dot", text: node.operation });
-                    send(msg);
-                    done();
+                    sendAndDone(msg);
 
                 } catch (error) {
                     // Handle general errors (validation, etc.)
                     node.error(error.message, msg);
                     msg.payload = { error: error.message };
-                    send(msg);
-                    done();
+                    sendAndDone(msg);
                 }
             });
         }

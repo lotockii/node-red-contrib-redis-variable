@@ -385,9 +385,21 @@ module.exports = function (RED) {
                 // Create Redis client
                 let client;
                 if (this.cluster) {
-                    // For cluster mode, options should be an array of nodes
-                    const clusterNodes = Array.isArray(connectionOptions) ? connectionOptions : [connectionOptions];
-                    client = new Redis.Cluster(clusterNodes);
+                    // ioredis Cluster: first arg = startup nodes [{ host, port }], second = options with redisOptions
+                    const clusterNodes = [{ host: options.host, port: parseInt(options.port, 10) }];
+                    const clusterOptions = {
+                        enableReadyCheck: false,
+                        lazyConnect: true,
+                        maxRetriesPerRequest: 3,
+                        redisOptions: {
+                            username: options.username || undefined,
+                            password: options.password || undefined,
+                            db: 0,
+                            connectTimeout: connectionOptions.connectTimeout || 5000,
+                            tls: connectionOptions.tls || undefined,
+                        },
+                    };
+                    client = new Redis.Cluster(clusterNodes, clusterOptions);
                 } else {
                     client = new Redis(connectionOptions);
                 }
