@@ -43,11 +43,11 @@ module.exports = function (RED) {
     // Helper function to get nested values like "redis_config.host"
     function getNestedValue(context, path) {
         if (!context) return undefined;
-        
+
         if (path.includes('.')) {
             const parts = path.split('.');
             let result = context.get(parts[0]);
-            
+
             // If the first part returns an object, traverse it
             if (result && typeof result === 'object') {
                 for (let i = 1; i < parts.length; i++) {
@@ -71,7 +71,7 @@ module.exports = function (RED) {
         RED.nodes.createNode(this, config);
         this.name = config.name || "Redis Config";
         this.cluster = config.cluster || false;
-        
+
         // Connection configuration
         this.hostType = config.hostType || 'str';
         this.host = config.host || 'localhost';
@@ -79,7 +79,7 @@ module.exports = function (RED) {
         this.port = config.port || 6379;
         this.portType = config.portType || 'str';
         this.portContext = config.portContext;
-        
+
         // Authentication
         this.passwordType = config.passwordType || 'str';
         this.password = config.password;
@@ -87,7 +87,7 @@ module.exports = function (RED) {
         this.username = config.username;
         this.usernameType = config.usernameType || 'str';
         this.usernameContext = config.usernameContext;
-        
+
         // SSL/TLS Configuration
         this.enableTLS = config.enableTLS || false;
         this.tlsRejectUnauthorized = config.tlsRejectUnauthorized !== false; // Default to true
@@ -97,12 +97,12 @@ module.exports = function (RED) {
         this.tlsKeyContext = config.tlsKeyContext;
         this.tlsCaType = config.tlsCaType || 'str';
         this.tlsCaContext = config.tlsCaContext;
-        
+
         // Database and other options
         this.database = config.database || 0;
         this.databaseType = config.databaseType || 'str';
         this.databaseContext = config.databaseContext;
-        
+
         // Advanced options
         this.optionsType = config.optionsType || 'json';
         this.options = config.options || '{}';
@@ -116,7 +116,7 @@ module.exports = function (RED) {
             if (!value && value !== 0) {
                 return null;
             }
-            
+
             try {
                 let result;
                 switch (type) {
@@ -164,11 +164,11 @@ module.exports = function (RED) {
                 if (this.hostType === 'str' && this.portType === 'str') {
                     return true;
                 }
-                
+
                 // For context-based configuration, check if the required values exist
                 let hasHost = false;
                 let hasPort = false;
-                
+
                 // Check host configuration
                 if (this.hostType === 'str') {
                     hasHost = !!(this.host);
@@ -176,7 +176,7 @@ module.exports = function (RED) {
                     const contextHost = this.parseCredentialValue(this.hostContext, this.hostType, msg, executingNode);
                     hasHost = !!(contextHost);
                 }
-                
+
                 // Check port configuration
                 if (this.portType === 'str') {
                     hasPort = !!(this.port);
@@ -184,16 +184,16 @@ module.exports = function (RED) {
                     const contextPort = this.parseCredentialValue(this.portContext, this.portType, msg, executingNode);
                     hasPort = !!(contextPort);
                 }
-                
+
                 // We need at least host and port to have a valid configuration
                 const result = hasHost && hasPort;
-                
+
                 if (executingNode && process.env.NODE_RED_DEBUG) {
                     executingNode.log(`Configuration check - hasHost: ${hasHost}, hasPort: ${hasPort}, result: ${result}`);
                 }
-                
+
                 return result;
-                
+
             } catch (error) {
                 if (executingNode) {
                     executingNode.error(`Error checking configuration: ${error.message}`);
@@ -339,7 +339,7 @@ module.exports = function (RED) {
         this.getClient = function(msg, executingNode, nodeId) {
             try {
                 const id = nodeId || this.id;
-                
+
                 // Return existing connection if available
                 if (connections[id]) {
                     usedConn[id]++;
@@ -353,7 +353,7 @@ module.exports = function (RED) {
                         if (!executingNode._configWarningShown) {
                             executingNode.warn("Redis configuration not available in context. Skipping connection attempt.");
                             executingNode._configWarningShown = true;
-                            
+
                             // Reset warning flag after 30 seconds
                             setTimeout(() => {
                                 if (executingNode) {
@@ -383,57 +383,13 @@ module.exports = function (RED) {
                 };
 
                 // Create Redis client
-                // Create Redis client
                 let client;
                 if (this.cluster) {
-                    // Prepare cluster node(s)
-                    const host = options.host;
-                    const port = parseInt(options.port);
-
-                    // AWS ElastiCache cluster connection (TLS-safe)
-                    const clusterNodes = [{ host, port }];
-
-                    const clusterOptions = {
-                        scaleReads: "slave",
-                        enableReadyCheck: false,
-                        slotsRefreshTimeout: 5000,
-                        redisOptions: {
-                            username: options.username || undefined,
-                            password: options.password || undefined,
-                            db: options.db || 0,
-                            connectTimeout: 5000,
-                            maxRetriesPerRequest: 3,
-                            retryStrategy: (times) => Math.min(times * 200, 2000),
-                            tls: this.enableTLS
-                                ? {
-                                    servername: host,
-                                    rejectUnauthorized: this.tlsRejectUnauthorized,
-                                    ca: this.credentials?.tlsCa || undefined,
-                                    cert: this.credentials?.tlsCert || undefined,
-                                    key: this.credentials?.tlsKey || undefined,
-                                }
-                                : undefined,
-                        },
-                    };
-
-                    client = new Redis.Cluster(clusterNodes, clusterOptions);
+                    // For cluster mode, options should be an array of nodes
+                    const clusterNodes = Array.isArray(connectionOptions) ? connectionOptions : [connectionOptions];
+                    client = new Redis.Cluster(clusterNodes);
                 } else {
-                    // Non-cluster (single node)
-                    client = new Redis({
-                        ...options,
-                        enableReadyCheck: false,
-                        connectTimeout: 5000,
-                        maxRetriesPerRequest: 3,
-                        tls: this.enableTLS
-                            ? {
-                                servername: options.host,
-                                rejectUnauthorized: this.tlsRejectUnauthorized,
-                                ca: this.credentials?.tlsCa || undefined,
-                                cert: this.credentials?.tlsCert || undefined,
-                                key: this.credentials?.tlsKey || undefined,
-                            }
-                            : undefined,
-                    });
+                    client = new Redis(connectionOptions);
                 }
 
                 // Track error state to prevent spam
@@ -444,11 +400,11 @@ module.exports = function (RED) {
                 // Handle connection errors
                 client.on("error", (e) => {
                     const now = Date.now();
-                    
+
                     // Only report errors once per interval to prevent spam
                     if (!errorReported || (now - lastErrorTime) > ERROR_REPORT_INTERVAL) {
                         let errorMsg = `Redis connection error: ${e.message}`;
-                        
+
                         // Add specific diagnostics for common SSL issues
                         if (e.message.includes("Protocol error") || e.message.includes("\\u0015")) {
                             errorMsg += "\nThis usually indicates an SSL/TLS configuration issue. Try:";
@@ -457,13 +413,13 @@ module.exports = function (RED) {
                             errorMsg += "\n3. Check if your Redis server is configured for SSL";
                             errorMsg += "\n4. Enable 'Debug: Force No SSL' option for testing";
                         }
-                        
+
                         if (executingNode) {
                             executingNode.error(errorMsg, {});
                         } else {
                             this.error(errorMsg, {});
                         }
-                        
+
                         errorReported = true;
                         lastErrorTime = now;
                     }

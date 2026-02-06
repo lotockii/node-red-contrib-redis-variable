@@ -4,7 +4,7 @@ module.exports = function (RED) {
     function RedisVariableNode(config) {
         RED.nodes.createNode(this, config);
         const node = this;
-        
+
         // Node configuration
         this.operation = config.operation || "get";
         this.timeout = config.timeout || 0;
@@ -50,6 +50,19 @@ module.exports = function (RED) {
                 }
             }
             return str;
+        }
+
+        function stableStringify(value) {
+            if (value === null || value === undefined) return String(value);
+            if (Array.isArray(value)) {
+                return `[${value.map(stableStringify).join(',')}]`;
+            }
+            if (typeof value === 'object') {
+                const keys = Object.keys(value).sort();
+                const entries = keys.map((key) => `"${key}":${stableStringify(value[key])}`);
+                return `{${entries.join(',')}}`;
+            }
+            return JSON.stringify(value);
         }
 
         // Handle different operations
@@ -309,6 +322,26 @@ module.exports = function (RED) {
                     return;
                 }
 
+                // Recreate client when connection options change (e.g., context-based config)
+                try {
+                    const options = redisConfig.getConnectionOptions(msg, node);
+                    const configKey = stableStringify({
+                        cluster: redisConfig.cluster === true,
+                        options
+                    });
+                    if (node._lastConnKey && node._lastConnKey !== configKey) {
+                        redisConfig.forceDisconnect(node.id);
+                        client = null;
+                    }
+                    node._lastConnKey = configKey;
+                } catch (configError) {
+                    node.error(configError.message, msg);
+                    msg.payload = { error: configError.message };
+                    send(msg);
+                    done();
+                    return;
+                }
+
                 // Only create client if not already created
                 try {
                     if (!client) {
@@ -322,11 +355,13 @@ module.exports = function (RED) {
                             return;
                         }
                     }
-                    
+
                     // Check if client is connected before proceeding
                     if (client.status !== 'ready' && client.status !== 'connect') {
                         // Try to connect if not connected
-                        if (client.status === 'disconnect' || client.status === 'end') {
+                        if (client.status === 'wait') {
+                            await client.connect();
+                        } else if (client.status === 'disconnect' || client.status === 'end') {
                             await client.connect();
                         } else {
                             // Force disconnect and recreate client for other error states
@@ -380,12 +415,25 @@ module.exports = function (RED) {
                                 if (!payload.key) {
                                     throw new Error("Missing key for SET operation. Use payload.key");
                                 }
-                                let setValue = payload.value !== undefined ? payload.value : payload.data;
+                                const payloadIsObject = payload && typeof payload === 'object' && !Array.isArray(payload);
+                                const payloadHasKey = payloadIsObject && Object.prototype.hasOwnProperty.call(payload, 'key');
+                                const payloadHasValue = payloadIsObject && (
+                                    Object.prototype.hasOwnProperty.call(payload, 'value') ||
+                                    Object.prototype.hasOwnProperty.call(payload, 'data')
+                                );
+                                let setValue;
+                                if (payloadHasValue) {
+                                    setValue = payload.value !== undefined ? payload.value : payload.data;
+                                } else if (payloadHasKey) {
+                                    setValue = undefined;
+                                } else {
+                                    setValue = payload;
+                                }
                                 if (setValue === undefined) {
-                                    throw new Error("Missing value for SET operation. Use payload.value or payload.data");
+                                    throw new Error("Missing value for SET operation. Use payload.value, payload.data, or payload as value");
                                 }
                                 setValue = smartSerialize(setValue);
-                                
+
                                 // Support TTL
                                 if (payload.ttl && payload.ttl > 0) {
                                     response = await client.setex(payload.key, payload.ttl, setValue);
@@ -420,14 +468,14 @@ module.exports = function (RED) {
                                 if (!pattern || typeof pattern !== 'string') {
                                     throw new Error("Missing pattern for MATCH operation. Use payload.pattern or payload as string");
                                 }
-                                
+
                                 let count = payload.count || 100; // Default scan count
                                 let startCursor = payload.cursor || payload.skip || 0; // Support cursor/skip for pagination
                                 let allKeys = [];
                                 let cursor = startCursor;
                                 let maxIterations = 1000; // Prevent infinite loops
                                 let iterations = 0;
-                                
+
                                 // If skip is specified, we need to scan through keys without collecting them
                                 if (payload.skip && payload.skip > 0) {
                                     let skipped = 0;
@@ -438,7 +486,7 @@ module.exports = function (RED) {
                                         const scanResult = await client.scan(cursor, 'MATCH', pattern, 'COUNT', count);
                                         cursor = scanResult[0];
                                         skipped += scanResult[1].length;
-                                        
+
                                         if (skipped >= payload.skip) {
                                             // We've skipped enough, start collecting from this point
                                             const excessSkipped = skipped - payload.skip;
@@ -450,7 +498,7 @@ module.exports = function (RED) {
                                         }
                                     } while (cursor !== 0 && cursor !== '0');
                                 }
-                                
+
                                 // Continue scanning to collect keys up to the limit
                                 do {
                                     if (iterations++ > maxIterations) {
@@ -459,15 +507,15 @@ module.exports = function (RED) {
                                     const scanResult = await client.scan(cursor, 'MATCH', pattern, 'COUNT', count);
                                     cursor = scanResult[0];
                                     allKeys = allKeys.concat(scanResult[1]);
-                                    
+
                                     // Break early if we've found enough keys
                                     if (allKeys.length >= count) {
                                         allKeys = allKeys.slice(0, count); // Trim to exact count
                                         break;
                                     }
                                 } while (cursor !== 0 && cursor !== '0');
-                                
-                                msg.payload = { 
+
+                                msg.payload = {
                                     pattern: pattern,
                                     keys: allKeys,
                                     count: allKeys.length,
@@ -487,7 +535,7 @@ module.exports = function (RED) {
                                     throw new Error("Missing key for TTL operation. Use payload.key or payload as string");
                                 }
                                 response = await client.ttl(ttlKey);
-                                msg.payload = { 
+                                msg.payload = {
                                     key: ttlKey,
                                     ttl: response,
                                     status: response === -1 ? "no expiration" : response === -2 ? "key not found" : "expires in " + response + " seconds"
@@ -500,7 +548,7 @@ module.exports = function (RED) {
                                 }
                                 let expireSeconds = payload.ttl || payload.seconds || payload.value || 3600;
                                 response = await client.expire(payload.key, expireSeconds);
-                                msg.payload = { 
+                                msg.payload = {
                                     success: response === 1,
                                     key: payload.key,
                                     ttl: expireSeconds,
@@ -514,7 +562,7 @@ module.exports = function (RED) {
                                     throw new Error("Missing key for PERSIST operation. Use payload.key or payload as string");
                                 }
                                 response = await client.persist(persistKey);
-                                msg.payload = { 
+                                msg.payload = {
                                     success: response === 1,
                                     key: persistKey,
                                     message: response === 1 ? "Expiration removed" : "Key not found or no expiration"
@@ -695,7 +743,7 @@ module.exports = function (RED) {
                         }
                     } catch (redisError) {
                         // Handle Redis-specific errors (connection, command errors, etc.)
-                        if (redisError.message.includes('ECONNREFUSED') || 
+                        if (redisError.message.includes('ECONNREFUSED') ||
                             redisError.message.includes('ENOTFOUND') ||
                             redisError.message.includes('ETIMEDOUT')) {
                             // Connection-related errors - force disconnect to prevent dead connections
@@ -707,8 +755,8 @@ module.exports = function (RED) {
                                     // Ignore disconnect errors
                                 }
                             }
-                            
-                            msg.payload = { 
+
+                            msg.payload = {
                                 error: `Redis connection failed: ${redisError.message}`,
                                 operation: node.operation,
                                 retryable: true
@@ -716,7 +764,7 @@ module.exports = function (RED) {
                             node.status({ fill: "red", shape: "ring", text: "connection failed" });
                         } else {
                             // Other Redis errors (command errors, etc.)
-                            msg.payload = { 
+                            msg.payload = {
                                 error: `Redis operation failed: ${redisError.message}`,
                                 operation: node.operation,
                                 retryable: false
@@ -763,7 +811,7 @@ module.exports = function (RED) {
         node.on("close", async (undeploy, done) => {
             node.status({});
             running = false;
-            
+
             if (node.operation === "instance" && node.location && node.topic) {
                 try {
                     node.context()[node.location].set(node.topic, null);
@@ -771,7 +819,7 @@ module.exports = function (RED) {
                     // Ignore errors when cleaning up context
                 }
             }
-            
+
             if (client) {
                 try {
                     if (node.operation === 'subscribe' && node.topic) {
@@ -788,7 +836,7 @@ module.exports = function (RED) {
                 const nodeId = node.block ? node.id : redisConfig.id;
                 redisConfig.disconnect(nodeId);
             }
-            
+
             client = null;
             done();
         });
