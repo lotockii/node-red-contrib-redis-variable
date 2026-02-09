@@ -265,6 +265,7 @@ module.exports = function (RED) {
                     retryDelayOnFailover: 100,
                     enableReadyCheck: false,
                     maxRetriesPerRequest: null,
+                    enableOfflineQueue: false,
                     ...additionalOptions
                 };
 
@@ -391,11 +392,13 @@ module.exports = function (RED) {
                         enableReadyCheck: false,
                         lazyConnect: true,
                         maxRetriesPerRequest: 3,
+                        enableOfflineQueue: false,
                         redisOptions: {
                             username: options.username || undefined,
                             password: options.password || undefined,
                             db: 0,
                             connectTimeout: connectionOptions.connectTimeout || 5000,
+                            commandTimeout: connectionOptions.commandTimeout || 3000,
                             tls: connectionOptions.tls || undefined,
                         },
                     };

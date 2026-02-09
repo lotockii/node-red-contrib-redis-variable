@@ -372,6 +372,11 @@ module.exports = function (RED) {
                     if (client.status !== 'ready' && client.status !== 'connect') {
                         const CONNECT_WAIT_MS = 15000;
                         const waitForReady = () => new Promise((resolve, reject) => {
+                            // If connection already established, resolve immediately
+                            if (client.status === 'ready' || client.status === 'connect') {
+                                resolve();
+                                return;
+                            }
                             const timeout = setTimeout(() => reject(new Error('Connection timeout')), CONNECT_WAIT_MS);
                             const onReady = () => { clearTimeout(timeout); cleanup(); resolve(); };
                             const onError = (e) => { clearTimeout(timeout); cleanup(); reject(e); };
@@ -423,8 +428,33 @@ module.exports = function (RED) {
                     try {
                         switch (node.operation) {
                             case "get":
-                                let getKey = payload.key || payload;
-                                if (!getKey || typeof getKey !== 'string') {
+                                let getKey;
+                                if (typeof payload === 'string' && isJsonString(payload)) {
+                                    try {
+                                        const parsed = JSON.parse(payload);
+                                        getKey = parsed.key !== undefined ? parsed.key : parsed.Key;
+                                    } catch (e) {
+                                        getKey = payload;
+                                    }
+                                } else if (Buffer.isBuffer(payload)) {
+                                    getKey = payload.toString();
+                                } else if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+                                    if (payload.key !== undefined || payload.Key !== undefined) {
+                                        getKey = payload.key !== undefined ? payload.key : payload.Key;
+                                    } else if (payload.payload && typeof payload.payload === 'object') {
+                                        const nested = payload.payload;
+                                        if (nested.key !== undefined || nested.Key !== undefined) {
+                                            getKey = nested.key !== undefined ? nested.key : nested.Key;
+                                        }
+                                    }
+                                } else {
+                                    getKey = payload;
+                                }
+                                if (getKey === undefined || getKey === null) {
+                                    throw new Error("Missing or invalid key for GET operation. Use payload.key or payload as string");
+                                }
+                                getKey = String(getKey).trim();
+                                if (!getKey) {
                                     throw new Error("Missing or invalid key for GET operation. Use payload.key or payload as string");
                                 }
                                 response = await client.get(getKey);
